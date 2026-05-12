@@ -11,9 +11,9 @@ class Simulador:
         self.cpus = [CPU(i) for i in range(config["cpus"])]
         
         # Filas de gerenciamento
-        self.fila_novas = config["tarefas"]  # Tarefas que ainda vão ingressar
-        self.fila_prontas = []               # Tarefas prontas para rodar
-        self.fila_concluidas = []            # Tarefas que já terminaram
+        self.fila_novas = config["tarefas"]  
+        self.fila_prontas = []               
+        self.fila_concluidas = []            
         
         self.historico_estados = []          
 
