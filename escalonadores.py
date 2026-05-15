@@ -58,3 +58,35 @@ def escalonar_srtf(fila_prontas, cpus):
 
     # Retornamos a fila de prontas atualizada (o Python atualiza a referência, mas é bom retornar)
     return fila_prontas
+
+
+def escalonar_priop(fila_prontas, cpus):
+    """
+    Lógica do PRIOP (Maior número = Maior prioridade)
+    """
+    # 1. MUDANÇA AQUI: Adicionamos o 'reverse=True' para ele ordenar do maior para o menor (Ex: 5, 4, 3...)
+    fila_prontas.sort(key=lambda t: t.prioridade, reverse=True)
+
+    # 2. Verificamos se há PREEMPÇÃO
+    for cpu in cpus:
+        if cpu.tarefa_atual is not None:
+            # MUDANÇA AQUI: Agora verificamos se quem está na fila tem a prioridade MAIOR (sinal de '>')
+            if fila_prontas and fila_prontas[0].prioridade > cpu.tarefa_atual.prioridade:
+
+                # Chuta a tarefa atual da CPU
+                tarefa_chutada = cpu.tarefa_atual
+                tarefa_chutada.estado = "Pronta"
+                tarefa_chutada.tempo_no_quantum = 0
+                fila_prontas.append(tarefa_chutada)
+
+                # Coloca a tarefa VIP na CPU
+                cpu.tarefa_atual = fila_prontas.pop(0)
+                cpu.tarefa_atual.estado = "Executando"
+
+    # 3. Preenchemos as CPUs vazias
+    for cpu in cpus:
+        if cpu.tarefa_atual is None and fila_prontas:
+            # Pega o primeiro da fila (que agora é o de maior número)
+            cpu.alocar_tarefa(fila_prontas.pop(0))
+
+    return fila_prontas

@@ -1,16 +1,18 @@
 class Task:
-    #Representa o Task Control Block (TCB) de uma tarefa no sistema.
+    # Representa o Task Control Block (TCB) de uma tarefa no sistema.
     def __init__(self, id_tarefa, cor, ingresso, duracao, prioridade, lista_eventos):
-        self.id = id_tarefa                  
-        self.cor = cor                       
-        self.ingresso = int(ingresso)        
-        self.duracao = int(duracao)          
-        self.prioridade = int(prioridade)    
-        self.lista_eventos = lista_eventos   
+        self.id = id_tarefa
+        self.cor = cor
+        self.ingresso = int(ingresso)
+        self.duracao = int(duracao)
+        self.prioridade = int(prioridade)
+        self.lista_eventos = lista_eventos
 
-        self.tempo_executado = 0             
-        self.estado = "Nova"                 # Estados: Nova, Pronta, Executando, Suspensa, Concluida
-        
+        self.tempo_executado = 0
+        self.tempo_no_quantum = 0
+        # Estados: Nova, Pronta, Executando, Suspensa, Concluida
+        self.estado = "Nova"
+
     def is_concluida(self):
         return self.tempo_executado >= self.duracao
 
@@ -18,8 +20,8 @@ class Task:
 class CPU:
     def __init__(self, id_cpu):
         self.id = id_cpu
-        self.tarefa_atual = None             
-        self.tempo_desligada = 0             
+        self.tarefa_atual = None
+        self.tempo_desligada = 0
         self.ligada = True                   # Se não tem tarefa, a CPU é desligada
 
     def alocar_tarefa(self, tarefa):

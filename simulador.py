@@ -1,6 +1,6 @@
 import copy
 from estruturas import CPU
-from escalonadores import escalonar_srtf
+from escalonadores import escalonar_srtf, escalonar_priop
 
 
 class Simulador:
@@ -56,6 +56,8 @@ class Simulador:
         # (Ele vai organizar as tarefas nas CPUs)
         if self.algoritmo == "SRTF":
             self.fila_prontas = escalonar_srtf(self.fila_prontas, self.cpus)
+        elif self.algoritmo == "PRIOP":
+            self.fila_prontas = escalonar_priop(self.fila_prontas, self.cpus)
         # ==========================================
 
             # 1. Tira a foto do estado ATUAL (antes de modificar) para o botão de retroceder
@@ -65,11 +67,21 @@ class Simulador:
         for cpu in self.cpus:
             if cpu.tarefa_atual is not None:
                 cpu.tarefa_atual.tempo_executado += 1
+                cpu.tarefa_atual.tempo_no_quantum += 1  # <--- Relógio do quantum avança!
 
+                # Regra 1: A tarefa terminou de vez?
                 if cpu.tarefa_atual.is_concluida():
                     cpu.tarefa_atual.estado = "Concluida"
                     self.fila_concluidas.append(cpu.tarefa_atual)
-                    cpu.tarefa_atual = None  # Libera o processador
+                    cpu.tarefa_atual = None
+
+                # Regra 2: Estourou o Quantum? (Só aplica se o algoritmo for PRIOP)
+                elif self.algoritmo == "PRIOP" and cpu.tarefa_atual.tempo_no_quantum == self.quantum:
+                    cpu.tarefa_atual.estado = "Pronta"
+                    cpu.tarefa_atual.tempo_no_quantum = 0  # Zera para a próxima rodada
+                    self.fila_prontas.append(
+                        cpu.tarefa_atual)  # Vai pro fim da fila
+                    cpu.tarefa_atual = None  # Chuta da CPU!
             else:
                 cpu.tempo_desligada += 1
 
