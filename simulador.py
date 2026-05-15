@@ -1,5 +1,6 @@
 import copy
 from estruturas import CPU
+from escalonadores import escalonar_srtf
 
 
 class Simulador:
@@ -39,9 +40,6 @@ class Simulador:
             # O melhor é ter salvo o 'total_tarefas' no __init__
             pass  # Continua executando caso precise desligar CPUs
 
-        # 1. Tira a foto do estado ATUAL (antes de modificar) para o botão de retroceder
-        self.salvar_snapshot()
-
         # 2. Chegada de Novas Tarefas
         tarefas_a_remover = []
         for tarefa in self.fila_novas:
@@ -56,7 +54,12 @@ class Simulador:
         # ==========================================
         # 3. AQUI ENTRARÁ O ESCALONADOR
         # (Ele vai organizar as tarefas nas CPUs)
+        if self.algoritmo == "SRTF":
+            self.fila_prontas = escalonar_srtf(self.fila_prontas, self.cpus)
         # ==========================================
+
+            # 1. Tira a foto do estado ATUAL (antes de modificar) para o botão de retroceder
+        self.salvar_snapshot()
 
         # 4. Executar as tarefas nas CPUs
         for cpu in self.cpus:
