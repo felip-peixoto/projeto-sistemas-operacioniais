@@ -29,7 +29,7 @@ def ler_arquivo_configuracao(caminho_arquivo):
         dados = linha.split(';')
 
         id_tarefa = dados[0].strip()
-        cor = dados[1].strip()
+        cor = dados[1].strip().upper()
         ingresso = dados[2].strip()
         duracao = dados[3].strip()
         prioridade = dados[4].strip()

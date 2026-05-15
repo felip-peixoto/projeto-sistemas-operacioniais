@@ -1,92 +1,109 @@
-def chave_srtf(tarefa):
-    """
-    Função auxiliar que cria a 'nota' da tarefa para o algoritmo SRTF.
-    O Python vai usar essa nota para ordenar a fila.
-    """
-    tempo_restante = tarefa.duracao - tarefa.tempo_executado
+import random
 
-    # CRITÉRIOS DE DESEMPATE DO PROFESSOR:
-    # 1. Menor tempo restante (Característica principal do SRTF)
-    # 2. Maior Prioridade (Assumindo que 1 é a melhor prioridade, se for o inverso, mude para -tarefa.prioridade)
-    # 3. Maior Duração Original (Para o Python colocar o MAIOR primeiro, usamos o sinal negativo)
-    # 4. Ingresso mais antigo (Menor valor de ingresso primeiro)
-    # 5. ID em ordem alfabética (String ordena alfabeticamente por padrão)
+
+def obter_tupla_desempate(tarefa, tarefas_executavam_antes):
+    # Se a tarefa foi expulsa pelo Quantum, 'estava_executando' deve ser falso
+    # para permitir o Round-Robin real.
+    estava_executando = 0 if tarefa in tarefas_executavam_antes else 1
 
     return (
-        tempo_restante,       # 1º critério (Crescente)
-        tarefa.prioridade,    # 2º critério (Crescente)
-        # 3º critério (Decrescente, note o sinal de menos!)
-        -tarefa.duracao,
-        tarefa.ingresso,      # 4º critério (Crescente)
-        tarefa.id             # 5º critério (Alfabético)
+        estava_executando,
+        tarefa.ingresso,
+        tarefa.duracao,
+        random.random()
     )
 
 
 def escalonar_srtf(fila_prontas, cpus):
-    """
-    Executa a lógica do SRTF Preemptivo.
-    Pega quem está rodando e quem está esperando, avalia todos, e decide quem fica na CPU.
-    """
-    # 1. Juntamos todo mundo que PODE rodar (quem está na fila + quem já está nas CPUs)
     candidatas = fila_prontas.copy()
+    tarefas_executavam_antes = []
+
     for cpu in cpus:
         if cpu.tarefa_atual is not None:
             candidatas.append(cpu.tarefa_atual)
-            cpu.tarefa_atual = None  # Tiramos a tarefa da CPU temporariamente
+            tarefas_executavam_antes.append(cpu.tarefa_atual)
+            cpu.tarefa_atual = None
 
-    # Se não tem ninguém para rodar, a gente vaza
     if not candidatas:
-        return []
+        return [], False
 
-    # 2. A MÁGICA: Ordenamos todas as candidatas usando a nossa chave de desempate
-    candidatas.sort(key=chave_srtf)
+    # VERIFICAÇÃO DE EMPATE/SORTEIO
+    houve_sorteio = False
+    chaves_vistas = set()
+    for t in candidatas:
+        # A chave base do SRTF antes do fator random
+        chave_base = (
+            t.duracao - t.tempo_executado,
+            0 if t in tarefas_executavam_antes else 1,
+            t.ingresso,
+            t.duracao
+        )
+        if chave_base in chaves_vistas:
+            # Detetada uma colisão exata! O sorteio vai atuar.
+            houve_sorteio = True
+        chaves_vistas.add(chave_base)
 
-    # 3. Colocamos os "vencedores" de volta nas CPUs disponíveis
-    fila_prontas.clear()  # Limpamos a fila original para reconstruí-la
+    # Ordenação: 1º Tempo Restante, depois a tupla de desempate
+    candidatas.sort(key=lambda t: (
+        t.duracao - t.tempo_executado,
+        *obter_tupla_desempate(t, tarefas_executavam_antes)
+    ))
 
+    # Realoca nas CPUs
+    fila_prontas.clear()
     for tarefa in candidatas:
-        # Tenta achar uma CPU livre para a tarefa vencedora
         cpu_livre = next((c for c in cpus if c.tarefa_atual is None), None)
-
         if cpu_livre is not None:
-            # Tem CPU livre! Aloca a tarefa e muda o estado
             cpu_livre.alocar_tarefa(tarefa)
         else:
-            # Acabaram as CPUs. Quem sobrou volta para a fila de prontas
             tarefa.estado = "Pronta"
             fila_prontas.append(tarefa)
 
-    # Retornamos a fila de prontas atualizada (o Python atualiza a referência, mas é bom retornar)
-    return fila_prontas
+    return fila_prontas, houve_sorteio
 
 
 def escalonar_priop(fila_prontas, cpus):
-    """
-    Lógica do PRIOP (Maior número = Maior prioridade)
-    """
-    # 1. MUDANÇA AQUI: Adicionamos o 'reverse=True' para ele ordenar do maior para o menor (Ex: 5, 4, 3...)
-    fila_prontas.sort(key=lambda t: t.prioridade, reverse=True)
+    candidatas = fila_prontas.copy()
+    tarefas_executavam_antes = []
 
-    # 2. Verificamos se há PREEMPÇÃO
     for cpu in cpus:
         if cpu.tarefa_atual is not None:
-            # MUDANÇA AQUI: Agora verificamos se quem está na fila tem a prioridade MAIOR (sinal de '>')
-            if fila_prontas and fila_prontas[0].prioridade > cpu.tarefa_atual.prioridade:
+            candidatas.append(cpu.tarefa_atual)
+            tarefas_executavam_antes.append(cpu.tarefa_atual)
+            cpu.tarefa_atual = None
 
-                # Chuta a tarefa atual da CPU
-                tarefa_chutada = cpu.tarefa_atual
-                tarefa_chutada.estado = "Pronta"
-                tarefa_chutada.tempo_no_quantum = 0
-                fila_prontas.append(tarefa_chutada)
+    if not candidatas:
+        return [], False
 
-                # Coloca a tarefa VIP na CPU
-                cpu.tarefa_atual = fila_prontas.pop(0)
-                cpu.tarefa_atual.estado = "Executando"
+    # VERIFICAÇÃO DE EMPATE/SORTEIO
+    houve_sorteio = False
+    chaves_vistas = set()
+    for t in candidatas:
+        # A chave base do PRIOP antes do fator random
+        chave_base = (
+            -t.prioridade,
+            0 if t in tarefas_executavam_antes else 1,
+            t.ingresso,
+            t.duracao
+        )
+        if chave_base in chaves_vistas:
+            # Detetada uma colisão exata! O sorteio vai atuar.
+            houve_sorteio = True
+        chaves_vistas.add(chave_base)
 
-    # 3. Preenchemos as CPUs vazias
-    for cpu in cpus:
-        if cpu.tarefa_atual is None and fila_prontas:
-            # Pega o primeiro da fila (que agora é o de maior número)
-            cpu.alocar_tarefa(fila_prontas.pop(0))
+    # Ordenação: 1º Prioridade, depois desempates
+    candidatas.sort(key=lambda t: (
+        -t.prioridade,
+        *obter_tupla_desempate(t, tarefas_executavam_antes)
+    ))
 
-    return fila_prontas
+    fila_prontas.clear()
+    for tarefa in candidatas:
+        cpu_livre = next((c for c in cpus if c.tarefa_atual is None), None)
+        if cpu_livre is not None:
+            cpu_livre.alocar_tarefa(tarefa)
+        else:
+            tarefa.estado = "Pronta"
+            fila_prontas.append(tarefa)
+
+    return fila_prontas, houve_sorteio
