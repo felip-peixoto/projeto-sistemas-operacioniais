@@ -21,11 +21,13 @@ class CPU:
     def __init__(self, id_cpu):
         self.id = id_cpu
         self.tarefa_atual = None
+        self.ultima_tarefa = None
         self.tempo_desligada = 0
         self.ligada = True                   # Se não tem tarefa, a CPU é desligada
 
     def alocar_tarefa(self, tarefa):
         self.tarefa_atual = tarefa
+        self.ultima_tarefa = tarefa
         self.ligada = True
         self.tarefa_atual.estado = "Executando"
 

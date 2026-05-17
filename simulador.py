@@ -39,10 +39,8 @@ class Simulador:
         É isso que a UI vai chamar quando o usuário apertar 'Avançar'.
         """
         # Verifica se já acabou tudo
-        if len(self.fila_concluidas) == len(self.fila_novas) + len(self.fila_prontas) + len(self.fila_concluidas):
-            # Cuidado: a lógica acima é só ilustrativa para saber o total.
-            # O melhor é ter salvo o 'total_tarefas' no __init__
-            pass  # Continua executando caso precise desligar CPUs
+        if getattr(self, 'total_tarefas_sistema', None) is not None and len(self.fila_concluidas) >= self.total_tarefas_sistema:
+            return
 
         # 2. Chegada de Novas Tarefas
         tarefas_a_remover = []
@@ -57,20 +55,28 @@ class Simulador:
 
         self.houve_sorteio_neste_tick = False
 
+        tem_nova_tarefa = len(tarefas_a_remover) > 0
+        tem_cpu_livre = any(cpu.tarefa_atual is None for cpu in self.cpus)
+        tem_tarefa_esperando = len(self.fila_prontas) > 0
+
+        precisa_escalonar = tem_nova_tarefa or (
+            tem_cpu_livre and tem_tarefa_esperando)
+
         # ==========================================
         # 3. AQUI ENTRARÁ O ESCALONADOR
         # (Ele vai organizar as tarefas nas CPUs)
-        if self.algoritmo == "SRTF":
-            self.fila_prontas, sorteio = escalonar_srtf(
-                self.fila_prontas, self.cpus)
-            if sorteio:
-                self.houve_sorteio_neste_tick = True
+        if precisa_escalonar:
+            if self.algoritmo == "SRTF":
+                self.fila_prontas, sorteio = escalonar_srtf(
+                    self.fila_prontas, self.cpus)
+                if sorteio:
+                    self.houve_sorteio_neste_tick = True
 
-        elif self.algoritmo == "PRIOP":
-            self.fila_prontas, sorteio = escalonar_priop(
-                self.fila_prontas, self.cpus)
-            if sorteio:
-                self.houve_sorteio_neste_tick = True
+            elif self.algoritmo == "PRIOP":
+                self.fila_prontas, sorteio = escalonar_priop(
+                    self.fila_prontas, self.cpus)
+                if sorteio:
+                    self.houve_sorteio_neste_tick = True
         # ==========================================
 
             # 1. Tira a foto do estado ATUAL (antes de modificar) para o botão de retroceder
