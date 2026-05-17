@@ -1,5 +1,6 @@
 from parser_config import ler_arquivo_configuracao
 from simulador import Simulador
+from frontend import iniciar_servidor_web
 
 
 def imprimir_gantt(motor):
@@ -151,6 +152,17 @@ def main():
         return
 
     motor = Simulador(config)
+
+    # escolha inicial: modo dev (CLI) ou web
+    print("\nEscolha modo de inicialização:")
+    print("1 - Modo Dev (CLI)")
+    print("2 - Modo Web (HTTP)")
+    modo = input("Opção (1/2) [1]: ").strip() or '1'
+
+    if modo == '2':
+        print("\nIniciando servidor web para controle da simulação (abra no navegador)...")
+        iniciar_servidor_web(motor, host='127.0.0.1', port=8000)
+        return
 
     print("\nSelecione o Modo de Execução (Req 1.5):")
     print("1 - Modo Passo a Passo (com controle manual)")
