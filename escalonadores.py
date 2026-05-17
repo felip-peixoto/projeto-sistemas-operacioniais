@@ -14,10 +14,15 @@ def obter_tupla_desempate(tarefa, tarefas_executavam_antes):
     )
 
 
-def escalonar_srtf(fila_prontas, cpus):
+def executar_escalonador(fila_prontas, cpus, algoritmo):
+    """
+    Função unificada de escalonamento. 
+    Serve para SRTF, PRIOP e qualquer outro algoritmo futuro.
+    """
     candidatas = fila_prontas.copy()
     tarefas_executavam_antes = []
 
+    # 1. Retira as tarefas que estavam a executar nas CPUs
     for cpu in cpus:
         if cpu.tarefa_atual is not None:
             candidatas.append(cpu.tarefa_atual)
@@ -27,97 +32,46 @@ def escalonar_srtf(fila_prontas, cpus):
     if not candidatas:
         return [], False
 
-    # VERIFICAÇÃO DE EMPATE/SORTEIO
+    # 2. Define a regra de ordenação primária consoante o algoritmo
+    def obter_chave_primaria(t):
+        if algoritmo == "SRTF":
+            return t.duracao - t.tempo_executado
+        elif algoritmo == "PRIOP":
+            return -t.prioridade
+        # Quando fores fazer o Projeto B, basta adicionares o PRIOPEnv aqui!
+        return 0
+
+    # 3. VERIFICAÇÃO DE EMPATE/SORTEIO
     houve_sorteio = False
     chaves_vistas = set()
     for t in candidatas:
-        # A chave base do SRTF antes do fator random
         chave_base = (
-            t.duracao - t.tempo_executado,
+            obter_chave_primaria(t),
             0 if t in tarefas_executavam_antes else 1,
             t.ingresso,
             t.duracao
         )
         if chave_base in chaves_vistas:
-            # Detetada uma colisão exata! O sorteio vai atuar.
             houve_sorteio = True
         chaves_vistas.add(chave_base)
 
-    # Ordenação: 1º Tempo Restante, depois a tupla de desempate
+    # 4. ORDENAÇÃO GERAL (Chave primária + Desempates)
     candidatas.sort(key=lambda t: (
-        t.duracao - t.tempo_executado,
+        obter_chave_primaria(t),
         *obter_tupla_desempate(t, tarefas_executavam_antes)
     ))
 
-    # Realoca nas CPU
+    # 5. REALOCAÇÃO NAS CPUs (Afinidade de CPU)
     fila_prontas.clear()
     for tarefa in candidatas:
-        # 1. Tenta achar a CPU que tem afinidade com esta tarefa (e que esteja livre)
+        # Tenta achar a CPU que tem afinidade com esta tarefa (e que esteja livre)
         cpu_preferida = next(
             (c for c in cpus if c.tarefa_atual is None and c.ultima_tarefa == tarefa), None)
 
         if cpu_preferida is not None:
             cpu_alocar = cpu_preferida
         else:
-            # 2. Se a CPU dela já foi ocupada por uma tarefa mais prioritária, pega qualquer uma livre
-            cpu_alocar = next(
-                (c for c in cpus if c.tarefa_atual is None), None)
-
-        if cpu_alocar is not None:
-            cpu_alocar.alocar_tarefa(tarefa)
-        else:
-            tarefa.estado = "Pronta"
-            fila_prontas.append(tarefa)
-
-    return fila_prontas, houve_sorteio
-
-
-def escalonar_priop(fila_prontas, cpus):
-    candidatas = fila_prontas.copy()
-    tarefas_executavam_antes = []
-
-    for cpu in cpus:
-        if cpu.tarefa_atual is not None:
-            candidatas.append(cpu.tarefa_atual)
-            tarefas_executavam_antes.append(cpu.tarefa_atual)
-            cpu.tarefa_atual = None
-
-    if not candidatas:
-        return [], False
-
-    # VERIFICAÇÃO DE EMPATE/SORTEIO
-    houve_sorteio = False
-    chaves_vistas = set()
-    for t in candidatas:
-        # A chave base do PRIOP antes do fator random
-        chave_base = (
-            -t.prioridade,
-            0 if t in tarefas_executavam_antes else 1,
-            t.ingresso,
-            t.duracao
-        )
-        if chave_base in chaves_vistas:
-            # Detetada uma colisão exata! O sorteio vai atuar.
-            houve_sorteio = True
-        chaves_vistas.add(chave_base)
-
-    # Ordenação: 1º Prioridade, depois desempates
-    candidatas.sort(key=lambda t: (
-        -t.prioridade,
-        *obter_tupla_desempate(t, tarefas_executavam_antes)
-    ))
-
-    # Realoca nas CPUs
-    fila_prontas.clear()
-    for tarefa in candidatas:
-        # 1. Tenta achar a CPU que tem afinidade com esta tarefa (e que esteja livre)
-        cpu_preferida = next(
-            (c for c in cpus if c.tarefa_atual is None and c.ultima_tarefa == tarefa), None)
-
-        if cpu_preferida is not None:
-            cpu_alocar = cpu_preferida
-        else:
-            # 2. Se a CPU dela já foi ocupada por uma tarefa mais prioritária, pega qualquer uma livre
+            # Se a CPU dela já foi ocupada, pega qualquer uma livre
             cpu_alocar = next(
                 (c for c in cpus if c.tarefa_atual is None), None)
 

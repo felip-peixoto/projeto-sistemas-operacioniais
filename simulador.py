@@ -1,11 +1,18 @@
 import copy
 from estruturas import CPU
-from escalonadores import escalonar_srtf, escalonar_priop
+from escalonadores import executar_escalonador
 
 
 class Simulador:
     def __init__(self, config):
+        algoritmos_suportados = ["SRTF", "PRIOP"]
+        if config["algoritmo"] not in algoritmos_suportados:
+            print(
+                f"🛑 ERRO FATAL: O algoritmo '{config['algoritmo']}' não foi implementado!")
+            print(f"Algoritmos suportados: {algoritmos_suportados}")
+            exit(1)  # Encerra o programa na hora
         # Config é o dicionario do parser_config
+
         self.relogio = 0
         self.algoritmo = config["algoritmo"]
         self.quantum = config["quantum"]
@@ -66,17 +73,11 @@ class Simulador:
         # 3. AQUI ENTRARÁ O ESCALONADOR
         # (Ele vai organizar as tarefas nas CPUs)
         if precisa_escalonar:
-            if self.algoritmo == "SRTF":
-                self.fila_prontas, sorteio = escalonar_srtf(
-                    self.fila_prontas, self.cpus)
-                if sorteio:
-                    self.houve_sorteio_neste_tick = True
-
-            elif self.algoritmo == "PRIOP":
-                self.fila_prontas, sorteio = escalonar_priop(
-                    self.fila_prontas, self.cpus)
-                if sorteio:
-                    self.houve_sorteio_neste_tick = True
+            self.fila_prontas, sorteio = executar_escalonador(
+                self.fila_prontas, self.cpus, self.algoritmo
+            )
+            if sorteio:
+                self.houve_sorteio_neste_tick = True
         # ==========================================
 
             # 1. Tira a foto do estado ATUAL (antes de modificar) para o botão de retroceder
