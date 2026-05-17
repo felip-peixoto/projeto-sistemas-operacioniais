@@ -3,6 +3,81 @@ from estruturas import CPU
 from escalonadores import executar_escalonador
 
 
+def forcar_mudanca_estado(self, id_tarefa, novo_estado):
+    """
+    Altera o estado de uma tarefa manualmente, respeitando as transições de estado.
+    Retorna: (sucesso: bool, mensagem: str)
+    """
+    # 1. Procurar a tarefa em todo o sistema
+    tarefa_encontrada = None
+    estado_atual = None
+
+    todas_tarefas = self.fila_novas + self.fila_prontas + \
+        self.fila_suspensas + self.fila_concluidas
+    for cpu in self.cpus:
+        if cpu.tarefa_atual is not None:
+            todas_tarefas.append(cpu.tarefa_atual)
+
+    for t in todas_tarefas:
+        if t.id == id_tarefa:
+            tarefa_encontrada = t
+            estado_atual = t.estado
+            break
+
+    if not tarefa_encontrada:
+        return False, f"Erro: Tarefa com ID '{id_tarefa}' não encontrada."
+
+    # 2. Formatar e validar o estado
+    novo_estado = novo_estado.capitalize()
+    estados_possiveis = ["Nova", "Pronta",
+                         "Executando", "Suspensa", "Concluida"]
+
+    if novo_estado not in estados_possiveis:
+        return False, f"Erro: O estado '{novo_estado}' não existe. Opções: {estados_possiveis}"
+
+    # 3. Regras de Transição (Livro do Maziero)
+    transicoes_validas = {
+        "Nova": ["Pronta"],
+        "Pronta": ["Executando"],
+        "Executando": ["Pronta", "Suspensa", "Concluida"],
+        "Suspensa": ["Pronta"],
+        "Concluida": []
+    }
+
+    if novo_estado not in transicoes_validas.get(estado_atual, []):
+        return False, f"Erro: Transição Inválida! Tarefa '{estado_atual}' não pode ir direto para '{novo_estado}'."
+
+    if novo_estado == "Executando":
+        return False, "Aviso: Para forçar uma tarefa a Executar, coloque-a como 'Pronta' e deixe o Escalonador agir."
+
+    # 4. Aplicar a mudança
+    tarefa_encontrada.estado = novo_estado
+
+    # Remove da lista antiga
+    if tarefa_encontrada in self.fila_novas:
+        self.fila_novas.remove(tarefa_encontrada)
+    if tarefa_encontrada in self.fila_prontas:
+        self.fila_prontas.remove(tarefa_encontrada)
+    if tarefa_encontrada in self.fila_suspensas:
+        self.fila_suspensas.remove(tarefa_encontrada)
+    if tarefa_encontrada in self.fila_concluidas:
+        self.fila_concluidas.remove(tarefa_encontrada)
+
+    for cpu in self.cpus:
+        if cpu.tarefa_atual == tarefa_encontrada:
+            cpu.tarefa_atual = None
+
+    # Adiciona na lista nova
+    if novo_estado == "Pronta":
+        self.fila_prontas.append(tarefa_encontrada)
+    elif novo_estado == "Suspensa":
+        self.fila_suspensas.append(tarefa_encontrada)
+    elif novo_estado == "Concluida":
+        self.fila_concluidas.append(tarefa_encontrada)
+
+    return True, f"Sucesso! Status da tarefa {id_tarefa} alterado para {novo_estado}."
+
+
 class Simulador:
     def __init__(self, config):
         algoritmos_suportados = ["SRTF", "PRIOP"]
