@@ -147,7 +147,7 @@ def imprimir_relatorio_ociosidade(motor):
 
 def main():
     print("Iniciando o Sistema Operacional...")
-    config = ler_arquivo_configuracao("teste.txt")
+    config = ler_arquivo_configuracao("config.txt")
     if not config:
         return
 

@@ -223,10 +223,28 @@ class GeradorSVGGantt:
         )
     
     def obter_cor_tarefa(self, id_tarefa: str) -> str:
-        cor = self.mapa_tarefa_cor.get(id_tarefa, "000000")
-        if not cor.startswith("#"):
-            cor = "#" + cor
-        return cor
+            # Pega a cor que veio do arquivo (ex: "vermelho", "azul")
+            cor_pt = str(self.mapa_tarefa_cor.get(id_tarefa, "")).strip().lower()
+
+            # Dicionário de tradução de Português para cores válidas no SVG (Hexadecimal)
+            dicionario_cores = {
+                "vermelho": "#FF0000",
+                "azul": "#0000FF",
+                "verde": "#008000",  # Verde clássico
+                "amarelo": "#FFFF00",
+                "preto": "#000000",
+                "branco": "#FFFFFF",
+                "roxo": "#800080",
+                "laranja": "#FFA500",
+                "rosa": "#FFC0CB",
+                "cinza": "#808080",
+                "ciano": "#00FFFF",
+                "magenta": "#FF00FF",
+                "marrom": "#A52A2A"
+            }
+
+            # Retorna a cor mapeada. Se o professor inventar uma cor que não está no dicionário, cai no padrão (preto)
+            return dicionario_cores.get(cor_pt, "#000000")
     
     def calcular_posicao_x(self, tick: int) -> float:
         return self.MARGEM_ESQUERDA + (tick * self.LARGURA_CELULA)
@@ -876,13 +894,6 @@ def iniciar_servidor_web(motor: Any, host: str = '127.0.0.1', port: int = 8000):
     except Exception:
         hist_len = getattr(getattr(motor, 'historico_estados', None), 'quantidade_snapshots', lambda: 'N/A')()
     print(f"[DIAG] iniciar_servidor_web: relogio={getattr(motor,'relogio','?')} | historico_len={hist_len} | fila_novas={len(getattr(motor,'fila_novas',[]))}")
-    # Se o historico estiver vazio, salve o snapshot inicial para evitar usar SVGs antigos
-    try:
-        if len(getattr(motor, 'historico_estados', [])) == 0 and hasattr(motor, 'salvar_snapshot'):
-            motor.salvar_snapshot()
-            print("[DIAG] Snapshot inicial salvo no motor (historico estava vazio)")
-    except Exception:
-        pass
     _gerar_svg_atual(motor, 'gantt_resultado.svg')
     handler = make_handler_class(motor, 'gantt_resultado.svg')
     server_address = (host, port)
