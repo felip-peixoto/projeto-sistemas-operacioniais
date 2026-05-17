@@ -2,12 +2,11 @@ from frontend import iniciar_servidor_web
 
 
 def main():
+    # Aqui iniciamos o sistema e deixamos o frontend web cuidar da simulacao.
     print("Iniciando o Sistema Operacional...")
 
-    # Sobe o servidor sem nenhum cenário carregado.
-    # O usuário escolhe o arquivo .txt pela interface web.
-    print("\n🌐 Iniciando servidor Web para controle da simulação...")
-    print("➡️ Acesse no seu navegador: http://127.0.0.1:8000")
+    print("\nIniciando servidor web para controle da simulacao...")
+    print("Acesse no navegador: http://127.0.0.1:8000")
 
     iniciar_servidor_web(None, host='127.0.0.1', port=8000)
 
