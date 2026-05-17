@@ -1,4 +1,0 @@
-PRIOP; 4; 2
-P1; vermelho; 0; 8; 1; CPU, IO, CPU
-P2; azul; 2; 5; 3; CPU, CPU
-P3; verde; 4; 10; 2; CPU, IO, CPU, IO

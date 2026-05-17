@@ -55,20 +55,28 @@ class Simulador:
 
         self.houve_sorteio_neste_tick = False
 
+        tem_nova_tarefa = len(tarefas_a_remover) > 0
+        tem_cpu_livre = any(cpu.tarefa_atual is None for cpu in self.cpus)
+        tem_tarefa_esperando = len(self.fila_prontas) > 0
+
+        precisa_escalonar = tem_nova_tarefa or (
+            tem_cpu_livre and tem_tarefa_esperando)
+
         # ==========================================
         # 3. AQUI ENTRARÁ O ESCALONADOR
         # (Ele vai organizar as tarefas nas CPUs)
-        if self.algoritmo == "SRTF":
-            self.fila_prontas, sorteio = escalonar_srtf(
-                self.fila_prontas, self.cpus)
-            if sorteio:
-                self.houve_sorteio_neste_tick = True
+        if precisa_escalonar:
+            if self.algoritmo == "SRTF":
+                self.fila_prontas, sorteio = escalonar_srtf(
+                    self.fila_prontas, self.cpus)
+                if sorteio:
+                    self.houve_sorteio_neste_tick = True
 
-        elif self.algoritmo == "PRIOP":
-            self.fila_prontas, sorteio = escalonar_priop(
-                self.fila_prontas, self.cpus)
-            if sorteio:
-                self.houve_sorteio_neste_tick = True
+            elif self.algoritmo == "PRIOP":
+                self.fila_prontas, sorteio = escalonar_priop(
+                    self.fila_prontas, self.cpus)
+                if sorteio:
+                    self.houve_sorteio_neste_tick = True
         # ==========================================
 
             # 1. Tira a foto do estado ATUAL (antes de modificar) para o botão de retroceder

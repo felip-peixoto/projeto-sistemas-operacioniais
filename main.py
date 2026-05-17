@@ -72,26 +72,67 @@ def modificar_tarefa_manualmente(motor):
     novo_estado = input(
         "Forçar Estado [Suspensa, Pronta, Nova] (ENTER para manter): ").strip()
 
-    if nova_duracao:
-        tarefa_encontrada.duracao = int(nova_duracao)
-    if nova_prioridade:
-        tarefa_encontrada.prioridade = int(nova_prioridade)
     if novo_estado:
-        tarefa_encontrada.estado = novo_estado
-        print("Aviso: Mover a tarefa manualmente entre filas na interface do terminal é complexo, seu Frontend cuidará disso melhor. Status alterado na memória.")
-    if novo_estado.lower() == "suspensa":
-        # Procurar onde a tarefa está e remover
-        if tarefa_encontrada in motor.fila_prontas:
-            motor.fila_prontas.remove(tarefa_encontrada)
+        # Formata a entrada para bater com o padrão (ex: "pronta" vira "Pronta")
+        novo_estado = novo_estado.capitalize()
+        estado_atual = tarefa_encontrada.estado
 
-        for cpu in motor.cpus:
-            if cpu.tarefa_atual == tarefa_encontrada:
-                cpu.tarefa_atual = None
+        # Regras de Transição do Livro do Maziero
+        transicoes_validas = {
+            "Nova": ["Pronta"],
+            "Pronta": ["Executando"],
+            "Executando": ["Pronta", "Suspensa", "Concluida"],
+            "Suspensa": ["Pronta"],
+            "Concluida": []  # Nenhuma transição permitida
+        }
 
-        tarefa_encontrada.estado = "Suspensa"
-        motor.fila_suspensas.append(tarefa_encontrada)
-        print(
-            f"Tarefa {tarefa_encontrada.id} movida para a Fila de Suspensas.")
+        # Validação 1: O estado digitado existe?
+        estados_possiveis = ["Nova", "Pronta",
+                             "Executando", "Suspensa", "Concluida"]
+        if novo_estado not in estados_possiveis:
+            print(
+                f"Erro: O estado '{novo_estado}' não existe. Opções: {estados_possiveis}")
+
+        # Validação 2: A transição de estado é permitida pela teoria?
+        elif novo_estado not in transicoes_validas[estado_atual]:
+            print(
+                f"Erro: Transição Inválida! Uma tarefa '{estado_atual}' não pode ir direto para '{novo_estado}'.")
+            print(
+                f"Transições permitidas para '{estado_atual}': {transicoes_validas[estado_atual]}")
+
+        # Se passou por todas as validações, aplica a mudança e ajusta as filas
+        else:
+            tarefa_encontrada.estado = novo_estado
+            print(
+                f"Status da tarefa {tarefa_encontrada.id} alterado para {novo_estado}!")
+
+            # ---------------------------------------------------------
+            # LÓGICA DE MOVIMENTAÇÃO DE FILAS (Bastidores do SO)
+            # ---------------------------------------------------------
+            # Remover da fila antiga (onde quer que ela estivesse)
+            if tarefa_encontrada in motor.fila_novas:
+                motor.fila_novas.remove(tarefa_encontrada)
+            if tarefa_encontrada in motor.fila_prontas:
+                motor.fila_prontas.remove(tarefa_encontrada)
+            if tarefa_encontrada in motor.fila_suspensas:
+                motor.fila_suspensas.remove(tarefa_encontrada)
+
+            # Se ela estava executando, tem que ser expulsa da CPU
+            if estado_atual == "Executando":
+                for cpu in motor.cpus:
+                    if cpu.tarefa_atual == tarefa_encontrada:
+                        cpu.tarefa_atual = None
+
+            # Colocar na fila nova
+            if novo_estado == "Pronta":
+                motor.fila_prontas.append(tarefa_encontrada)
+            elif novo_estado == "Suspensa":
+                motor.fila_suspensas.append(tarefa_encontrada)
+            elif novo_estado == "Concluida":
+                motor.fila_concluidas.append(tarefa_encontrada)
+            elif novo_estado == "Executando":
+                print(
+                    "Aviso: Para forçar uma tarefa a Executar, o Escalonador precisa agir.")
     print("Modificação aplicada!\n")
 
 

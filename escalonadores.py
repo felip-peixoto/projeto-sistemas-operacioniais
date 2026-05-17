@@ -49,12 +49,22 @@ def escalonar_srtf(fila_prontas, cpus):
         *obter_tupla_desempate(t, tarefas_executavam_antes)
     ))
 
-    # Realoca nas CPUs
+    # Realoca nas CPU
     fila_prontas.clear()
     for tarefa in candidatas:
-        cpu_livre = next((c for c in cpus if c.tarefa_atual is None), None)
-        if cpu_livre is not None:
-            cpu_livre.alocar_tarefa(tarefa)
+        # 1. Tenta achar a CPU que tem afinidade com esta tarefa (e que esteja livre)
+        cpu_preferida = next(
+            (c for c in cpus if c.tarefa_atual is None and c.ultima_tarefa == tarefa), None)
+
+        if cpu_preferida is not None:
+            cpu_alocar = cpu_preferida
+        else:
+            # 2. Se a CPU dela já foi ocupada por uma tarefa mais prioritária, pega qualquer uma livre
+            cpu_alocar = next(
+                (c for c in cpus if c.tarefa_atual is None), None)
+
+        if cpu_alocar is not None:
+            cpu_alocar.alocar_tarefa(tarefa)
         else:
             tarefa.estado = "Pronta"
             fila_prontas.append(tarefa)
@@ -97,11 +107,22 @@ def escalonar_priop(fila_prontas, cpus):
         *obter_tupla_desempate(t, tarefas_executavam_antes)
     ))
 
+    # Realoca nas CPUs
     fila_prontas.clear()
     for tarefa in candidatas:
-        cpu_livre = next((c for c in cpus if c.tarefa_atual is None), None)
-        if cpu_livre is not None:
-            cpu_livre.alocar_tarefa(tarefa)
+        # 1. Tenta achar a CPU que tem afinidade com esta tarefa (e que esteja livre)
+        cpu_preferida = next(
+            (c for c in cpus if c.tarefa_atual is None and c.ultima_tarefa == tarefa), None)
+
+        if cpu_preferida is not None:
+            cpu_alocar = cpu_preferida
+        else:
+            # 2. Se a CPU dela já foi ocupada por uma tarefa mais prioritária, pega qualquer uma livre
+            cpu_alocar = next(
+                (c for c in cpus if c.tarefa_atual is None), None)
+
+        if cpu_alocar is not None:
+            cpu_alocar.alocar_tarefa(tarefa)
         else:
             tarefa.estado = "Pronta"
             fila_prontas.append(tarefa)
