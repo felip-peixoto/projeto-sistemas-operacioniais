@@ -38,11 +38,9 @@ class Simulador:
         Executa apenas UM instante de tempo (passo-a-passo).
         É isso que a UI vai chamar quando o usuário apertar 'Avançar'.
         """
-        # Verifica se já acabou tudo
-        if len(self.fila_concluidas) == len(self.fila_novas) + len(self.fila_prontas) + len(self.fila_concluidas):
-            # Cuidado: a lógica acima é só ilustrativa para saber o total.
-            # O melhor é ter salvo o 'total_tarefas' no __init__
-            pass  # Continua executando caso precise desligar CPUs
+        # Verifica se já acabou tudo — evita avanços infinitos
+        if getattr(self, 'total_tarefas_sistema', None) is not None and len(self.fila_concluidas) >= self.total_tarefas_sistema:
+            return
 
         # 2. Chegada de Novas Tarefas
         tarefas_a_remover = []
