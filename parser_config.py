@@ -21,6 +21,12 @@ def ler_arquivo_configuracao(caminho_arquivo):
     quantum = int(config_sistema[1].strip())
     qtde_cpus = int(config_sistema[2].strip())
 
+    # Req. Geral 2: o sistema deve ter no mínimo 2 CPUs
+    if qtde_cpus < 2:
+        print(
+            f"Erro: o sistema deve ter no mínimo 2 CPUs (configurado: {qtde_cpus}).")
+        return None
+
     alpha = int(config_sistema[3].strip()) if len(config_sistema) > 3 else None
 
     tarefas_criadas = []

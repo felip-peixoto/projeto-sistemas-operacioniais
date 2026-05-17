@@ -213,16 +213,35 @@ class GeradorSVGGantt:
             tarefa.id: tarefa.cor for tarefa in self.tarefas_tcb
         }
 
-        self.largura_svg = (
+        # Largura mínima para que a legenda (2 colunas de ~200px cada) não seja cortada
+        # MARGEM_ESQUERDA + COL1(200px) + COL2(200px) + margem direita
+        largura_minima_legenda = self.MARGEM_ESQUERDA + 200 + 200 + 40
+        largura_por_ticks = (
             self.MARGEM_ESQUERDA +
             (self.total_ticks * self.LARGURA_CELULA) +
             self.MARGEM_DIREITA
         )
+        self.largura_svg = max(largura_por_ticks, largura_minima_legenda)
 
+        # Descobre nº de CPUs para calcular altura das barras de ociosidade
+        try:
+            if hasattr(historico, 'snapshots') and historico.snapshots:
+                num_cpus_est = len(historico.snapshots[0].get('cpus', []))
+            elif isinstance(historico, list) and historico:
+                num_cpus_est = len(historico[0].get('cpus', []))
+            else:
+                num_cpus_est = 2
+        except Exception:
+            num_cpus_est = 2
+
+        # Cada barra de CPU ocupa 18px + 6px de gap; legenda tem 4 linhas de 20px + cabeçalho
+        extra_cpu = 40 + num_cpus_est * (18 + 6)  # título + barras
+        extra_legenda = 20 + 4 * 20 + 10              # título + 4 linhas + margem
         self.altura_svg = (
             self.MARGEM_TOPO +
             (self.num_tarefas * self.ALTURA_CELULA) +
-            self.MARGEM_RODAPE
+            extra_cpu +
+            extra_legenda
         )
 
     def obter_cor_tarefa(self, id_tarefa: str) -> str:
@@ -303,8 +322,16 @@ class GeradorSVGGantt:
                 x_sorteio = self.calcular_posicao_x(
                     tick) + (self.LARGURA_CELULA / 2)
                 y_sorteio = self.MARGEM_TOPO - 15
+                # Dado SVG puro: quadrado com 3 pontos visíveis (sem emoji)
+                d = 10  # tamanho do dado
+                rx = x_sorteio - d / 2
+                ry = y_sorteio - d
                 linhas.append(
-                    f'<text x="{x_sorteio}" y="{y_sorteio}" font-size="14" text-anchor="middle">🎲</text>')
+                    f'<rect x="{rx}" y="{ry}" width="{d}" height="{d}" rx="2" fill="#fff" stroke="#333" stroke-width="1.2"/>')
+                # 3 pontos em diagonal (canto sup-esq, centro, canto inf-dir) — face do 3
+                for (dpx, dpy) in [(-2.8, -2.8), (0, 0), (2.8, 2.8)]:
+                    linhas.append(
+                        f'<circle cx="{x_sorteio + dpx}" cy="{y_sorteio - d/2 + dpy}" r="1.2" fill="#333"/>')
 
             # Mapeia o estado exato das tarefas nesta "foto" do tempo
             tarefas_neste_tick = snapshot.get("tarefas", [])
@@ -355,8 +382,9 @@ class GeradorSVGGantt:
                 if tick == tarefa_base.ingresso:
                     cx = x + padding + 5
                     cy = y + padding + 5
+                    # Círculo branco com borda preta indica ingresso da tarefa
                     linhas.append(
-                        f'<circle cx="{cx}" cy="{cy}" r="4" fill="#00FF00" stroke="#000"/>')
+                        f'<circle cx="{cx}" cy="{cy}" r="4" fill="#FFFFFF" stroke="#000" stroke-width="1.2"/>')
 
                 # Ícone de Conclusão (Um X vermelho no exato instante em que ela conclui)
                 estado_anterior = "Nova"
@@ -368,10 +396,15 @@ class GeradorSVGGantt:
                         estado_anterior = getattr(t_ant, 'estado', 'Nova')
 
                 if estado == "Concluida" and estado_anterior != "Concluida":
-                    cx = x + (self.LARGURA_CELULA / 2)
-                    cy = y + (self.ALTURA_CELULA / 2)
+                    # X formado pelas duas diagonais do retângulo da célula
+                    x1c = x + padding
+                    y1c = y + padding
+                    x2c = x + self.LARGURA_CELULA - padding
+                    y2c = y + self.ALTURA_CELULA - padding
                     linhas.append(
-                        f'<text x="{cx}" y="{cy + 5}" font-size="14" text-anchor="middle">❌</text>')
+                        f'<line x1="{x1c}" y1="{y1c}" x2="{x2c}" y2="{y2c}" stroke="#CC0000" stroke-width="2.5" stroke-linecap="round"/>')
+                    linhas.append(
+                        f'<line x1="{x2c}" y1="{y1c}" x2="{x1c}" y2="{y2c}" stroke="#CC0000" stroke-width="2.5" stroke-linecap="round"/>')
 
         # Labels de tempo
         for tick in range(0, self.total_ticks + 1, max(1, self.total_ticks // 10)):
@@ -389,6 +422,138 @@ class GeradorSVGGantt:
                 idx_tarefa) + (self.ALTURA_CELULA / 2) + 5
             linhas.append(
                 f'<text x="{x}" y="{y}" class="label" text-anchor="end">{tarefa.id}</text>')
+
+        # ==========================================
+        # OCIOSIDADE DE CPU: uma barra por CPU abaixo do gantt
+        # Cinza = ociosa, verde claro = executando
+        # ==========================================
+        ALT_BARRA = 18   # altura de cada barra de CPU
+        GAP_BARRA = 6    # espaço entre barras
+        GAP_TITULO = 20   # espaço entre o gantt e o bloco de CPUs
+
+        # Descobre quais CPUs existem a partir do primeiro snapshot
+        cpus_ids = []
+        if self.snapshots:
+            cpus_ids = [getattr(c, 'id', i)
+                        for i, c in enumerate(self.snapshots[0].get('cpus', []))]
+
+        # Linha separadora entre gantt e CPUs
+        y_sep = self.MARGEM_TOPO + self.num_tarefas * self.ALTURA_CELULA + 8
+        linhas.append(f'<line x1="{self.MARGEM_ESQUERDA}" y1="{y_sep}" '
+                      f'x2="{self.calcular_posicao_x(self.total_ticks)}" y2="{y_sep}" '
+                      f'stroke="#CCCCCC" stroke-width="1"/>')
+
+        # Título "Ociosidade de CPUs" alinhado à esquerda da margem
+        y_titulo_cpu = y_sep + 14
+        linhas.append(f'<text x="{self.MARGEM_ESQUERDA}" y="{y_titulo_cpu}" '
+                      f'font-size="11" font-family="Arial" font-weight="bold" fill="#555">'
+                      f'Ociosidade de CPUs:</text>')
+
+        # Uma barra por CPU
+        y_primeira_barra = y_titulo_cpu + 6
+        for idx_cpu, cpu_id in enumerate(cpus_ids):
+            y_barra = y_primeira_barra + idx_cpu * (ALT_BARRA + GAP_BARRA)
+
+            # Label "P0", "P1" etc. à esquerda da barra, alinhado verticalmente ao centro
+            linhas.append(f'<text x="{self.MARGEM_ESQUERDA - 6}" y="{y_barra + ALT_BARRA//2 + 4}" '
+                          f'font-size="10" font-family="Arial" text-anchor="end" fill="#333">P{cpu_id}</text>')
+
+            # Pinta tick a tick
+            total_ociosa = 0
+            for tick in range(self.total_ticks):
+                if tick >= len(self.snapshots):
+                    break
+                cpus_snap = self.snapshots[tick].get('cpus', [])
+                executando = any(
+                    getattr(c, 'id', None) == cpu_id and getattr(
+                        c, 'tarefa_atual', None) is not None
+                    for c in cpus_snap
+                )
+                cor_barra = "#E8F5E9" if executando else "#EF9A9A"
+                if not executando:
+                    total_ociosa += 1
+                xb = self.calcular_posicao_x(tick)
+                linhas.append(f'<rect x="{xb}" y="{y_barra}" '
+                              f'width="{self.LARGURA_CELULA}" height="{ALT_BARRA}" '
+                              f'fill="{cor_barra}" stroke="#BBBBBB" stroke-width="0.5"/>')
+
+            # Contador de ticks ociosa à direita das barras
+            x_fim = self.calcular_posicao_x(self.total_ticks) + 6
+            linhas.append(f'<text x="{x_fim}" y="{y_barra + ALT_BARRA//2 + 4}" '
+                          f'font-size="10" font-family="Arial" fill="#888">'
+                          f'{total_ociosa} ticks ociosa</text>')
+
+        # ==========================================
+        # LEGENDA — uma linha por item, empilhada verticalmente
+        # Posicionada abaixo das barras de CPU
+        # ==========================================
+        num_cpus = len(cpus_ids) if cpus_ids else 1
+        y_leg_base = y_primeira_barra + num_cpus * (ALT_BARRA + GAP_BARRA) + 16
+        x_leg = self.MARGEM_ESQUERDA   # alinha com o gantt
+        ICON_W = 16   # largura do ícone
+        ICON_H = 14   # altura do ícone
+        TEXT_OFF = 22   # deslocamento texto → ícone
+        LINE_H = 20   # altura de cada linha da legenda
+        COL2 = 200  # deslocamento da segunda coluna
+
+        linhas.append(f'<text x="{x_leg}" y="{y_leg_base}" '
+                      f'font-size="11" font-family="Arial" font-weight="bold" fill="#333">'
+                      f'Legenda:</text>')
+
+        # Linha 1, coluna 1: Executando
+        y = y_leg_base + LINE_H
+        linhas.append(
+            f'<rect x="{x_leg}" y="{y - ICON_H + 2}" width="{ICON_W}" height="{ICON_H}" fill="#4CAF50" stroke="#333" stroke-width="1"/>')
+        linhas.append(
+            f'<text x="{x_leg + TEXT_OFF}" y="{y}" font-size="10" font-family="Arial" fill="#333">Executando (cor da tarefa)</text>')
+
+        # Linha 1, coluna 2: Pronta
+        linhas.append(
+            f'<rect x="{x_leg + COL2}" y="{y - ICON_H + 2}" width="{ICON_W}" height="{ICON_H}" fill="none" stroke="#4CAF50" stroke-width="1.5" stroke-dasharray="3,2"/>')
+        linhas.append(
+            f'<text x="{x_leg + COL2 + TEXT_OFF}" y="{y}" font-size="10" font-family="Arial" fill="#333">Pronta / aguardando CPU</text>')
+
+        # Linha 2, coluna 1: Suspensa
+        y += LINE_H
+        linhas.append(
+            f'<rect x="{x_leg}" y="{y - ICON_H + 2}" width="{ICON_W}" height="{ICON_H}" fill="#000000" stroke="#333" stroke-width="1"/>')
+        linhas.append(
+            f'<text x="{x_leg + TEXT_OFF}" y="{y}" font-size="10" font-family="Arial" fill="#333">Suspensa (bloqueada)</text>')
+
+        # Linha 2, coluna 2: CPU ociosa
+        linhas.append(
+            f'<rect x="{x_leg + COL2}" y="{y - ICON_H + 2}" width="{ICON_W}" height="{ICON_H}" fill="#EF9A9A" stroke="#BBBBBB" stroke-width="1"/>')
+        linhas.append(
+            f'<text x="{x_leg + COL2 + TEXT_OFF}" y="{y}" font-size="10" font-family="Arial" fill="#333">CPU ociosa / desligada</text>')
+
+        # Linha 3, coluna 1: Ingresso
+        y += LINE_H
+        linhas.append(
+            f'<circle cx="{x_leg + ICON_W//2}" cy="{y - ICON_H//2}" r="5" fill="#FFFFFF" stroke="#000" stroke-width="1.2"/>')
+        linhas.append(
+            f'<text x="{x_leg + TEXT_OFF}" y="{y}" font-size="10" font-family="Arial" fill="#333">Ingresso da tarefa no sistema</text>')
+
+        # Linha 3, coluna 2: Conclusão
+        lx1, ly1 = x_leg + COL2,            y - ICON_H + 2
+        lx2, ly2 = x_leg + COL2 + ICON_W,   y + 2
+        linhas.append(
+            f'<line x1="{lx1}" y1="{ly1}" x2="{lx2}" y2="{ly2}" stroke="#CC0000" stroke-width="2" stroke-linecap="round"/>')
+        linhas.append(
+            f'<line x1="{lx2}" y1="{ly1}" x2="{lx1}" y2="{ly2}" stroke="#CC0000" stroke-width="2" stroke-linecap="round"/>')
+        linhas.append(
+            f'<text x="{x_leg + COL2 + TEXT_OFF}" y="{y}" font-size="10" font-family="Arial" fill="#333">Conclusão da tarefa</text>')
+
+        # Linha 4, coluna 1: Sorteio (dado SVG — quadrado com 3 pontos em diagonal)
+        y += LINE_H
+        d = 13
+        dx, dy = x_leg, y - ICON_H + 1
+        linhas.append(
+            f'<rect x="{dx}" y="{dy}" width="{d}" height="{d}" rx="2" fill="#fff" stroke="#333" stroke-width="1.2"/>')
+        for (dpx, dpy) in [(-3, -3), (0, 0), (3, 3)]:
+            linhas.append(
+                f'<circle cx="{dx + d//2 + dpx}" cy="{dy + d//2 + dpy}" r="1.4" fill="#333"/>')
+        linhas.append(
+            f'<text x="{x_leg + TEXT_OFF}" y="{y}" font-size="10" font-family="Arial" fill="#333">Sorteio por empate no escalonamento</text>')
 
         linhas.append('')
         linhas.append('</svg>')
@@ -693,10 +858,10 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
     class SimHandler(http.server.BaseHTTPRequestHandler):
         server_motor = motor
         server_lock = threading.Lock()
-        server_mode = 'idle'  # 'idle', 'passo', 'completo'
+        server_mode = 'idle'
         server_worker = None
         server_stop_event = None
-        server_arquivo_atual = 'config.txt'  # Guarda qual arquivo está ativo
+        server_arquivo_atual = None  # Nenhum arquivo carregado ainda
 
         def _redirect_root(self):
             self.send_response(303)
@@ -761,7 +926,15 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                         break
 
                 try:
+                    # Atualiza o SVG de trabalho normal
                     _gerar_svg_atual(motor, svg_path)
+                    # Salva também uma cópia permanente do resultado final (Req 2.4)
+                    arquivo_final = type(
+                        self).server_arquivo_atual or "simulacao"
+                    nome_final = arquivo_final.replace(
+                        ".txt", "") + "_gantt_final.svg"
+                    _gerar_svg_atual(motor, nome_final)
+                    print(f"[WEB] SVG final salvo em: {nome_final}")
                 except Exception:
                     pass
                 type(self).server_mode = 'idle'
@@ -785,9 +958,54 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
 
             if path == '/' or path == '':
                 with self.server_lock:
-                    svg_content = self._read_svg()
                     motor = self.server_motor
                     mode = type(self).server_mode
+
+                # Se ainda não há nenhum cenário carregado, exibe tela de seleção
+                if motor is None:
+                    arquivos_txt = [f for f in os.listdir(
+                        '.') if f.endswith('.txt')]
+                    opcoes_html = "".join(
+                        [f'<option value="{f}">{f}</option>' for f in arquivos_txt])
+                    html = f'''<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Simulador S.O. - Selecionar Configuração (.txt)</title>
+  <style>
+    body{{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;font-family:Arial,sans-serif;background:#fafafa;color:#333;}}
+    .card{{background:#fff;border:1px solid #e0e0e0;padding:40px 60px;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,0.08);text-align:center;}}
+    h2{{margin-bottom:8px;}}
+    p{{color:#666;margin-bottom:24px;}}
+    select{{padding:8px 12px;border-radius:6px;border:1px solid #ccc;font-size:15px;min-width:220px;}}
+    button{{padding:10px 24px;background:#2e7d32;color:#fff;border:none;border-radius:6px;font-size:15px;font-weight:bold;cursor:pointer;margin-left:8px;}}
+    button:hover{{background:#1b5e20;}}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>ICSO30 - Sistemas Operacionais: Projeto A</h2>
+    <h3>Felipe Dias Peixoto e Bruno Seiji Fujihara</h3>  
+    <p>Nenhum cenário carregado. Selecione um arquivo <code>.txt</code> para começar.</p>
+    <form action="/selecionar_arquivo" method="GET" style="display:flex;gap:8px;justify-content:center;align-items:center;">
+      <select name="arquivo">{opcoes_html}</select>
+      <button type="submit">Carregar</button>
+    </form>
+    {'<p style="color:#c00;margin-top:16px;">⚠️ Nenhum arquivo .txt encontrado na pasta do projeto.</p>' if not arquivos_txt else ''}
+  </div>
+</body>
+</html>'''
+                    encoded = html.encode('utf-8')
+                    self.send_response(200)
+                    self.send_header(
+                        'Content-Type', 'text/html; charset=utf-8')
+                    self.send_header('Content-Length', str(len(encoded)))
+                    self.end_headers()
+                    self.wfile.write(encoded)
+                    return
+
+                with self.server_lock:
+                    svg_content = self._read_svg()
 
                 # 1. Escaneia a pasta procurando por arquivos TXT de configuração
                 arquivos_txt = [f for f in os.listdir(
@@ -800,7 +1018,7 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                     seletor_arquivo_html = f"""
                     <div class="sys-card" style="text-align: center;">
                         <form action="/selecionar_arquivo" method="GET" style="display: flex; gap: 8px; justify-content: center; align-items: center; margin: 0;">
-                            <strong>📁 Selecionar Cenário (TXT):</strong>
+                            <strong>Selecionar Configurações (.txt):</strong>
                             <select name="arquivo" style="padding: 6px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer;">
                                 {opcoes_html}
                             </select>
@@ -811,7 +1029,7 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                 else:
                     seletor_arquivo_html = f"""
                     <div class="sys-card" style="text-align: center; background-color: #eee;">
-                        <strong>🔒 Arquivo em Execução:</strong> <span class="highlight">{type(self).server_arquivo_atual}</span> (Reinicie para trocar)
+                        <strong>Configuração em Execução:</strong> <span class="highlight">{type(self).server_arquivo_atual}</span> (Reinicie para trocar)
                     </div>
                     """
 
@@ -918,23 +1136,27 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
   </style>
 </head>
 <body>
-  <div class="tick">🕒 Tick Atual: {getattr(self.server_motor, 'relogio', '?')} | Estado: {mode.upper()}</div>
   
   {seletor_arquivo_html}
   {info_sistema_html}
 
-  <div class="controls">
+    <div class="controls">
       {controls_html}
       {manual_html}
       {reiniciar_html}
   </div>
   
+   <div class="tick">Tick Atual: {getattr(self.server_motor, 'relogio', '?')} | Estado: {mode.upper()}</div>
+   
   <div class="svgwrap">
-    <h3 style="margin-top:0;border-bottom:2px solid #1976d2;padding-bottom:6px;">📊 Gráfico de Gantt da Simulação</h3>
+    <h3 style="margin-top:0;border-bottom:2px solid #1976d2;padding-bottom:6px;">Gráfico de Gantt da Simulação</h3>
     {svg_content}
   </div>
+  
 
-  <h3 style="margin-bottom:6px;">📦 Bloco de Controle de Tarefas (TCB) & Debugger</h3>
+  
+
+ 
   {tabela_tcb_html}
 </body>
 </html>'''
@@ -952,7 +1174,9 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                         query = urllib.parse.parse_qs(parsed.query)
                         arquivo_escolhido = query.get('arquivo', [None])[0]
 
-                        if arquivo_escolhido and type(self).server_mode == 'idle':
+                        pode_carregar = (type(self).server_motor is None or type(
+                            self).server_mode == 'idle')
+                        if arquivo_escolhido and pode_carregar:
                             cfg = ler_arquivo_configuracao(arquivo_escolhido)
                             if cfg:
                                 type(self).server_motor = Simulador(cfg)
@@ -1039,8 +1263,9 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                         cfg = None
                         try:
                             # Recarrega usando dinamicamente o arquivo ativo selecionado
+                            arq = type(self).server_arquivo_atual
                             cfg = ler_arquivo_configuracao(
-                                type(self).server_arquivo_atual)
+                                arq) if arq else None
                         except Exception as e:
                             print("[WEB] REINICIAR config load error:", e)
 
@@ -1065,15 +1290,8 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
 
 
 def iniciar_servidor_web(motor: Any, host: str = '127.0.0.1', port: int = 8000):
-    # Diagnóstico rápido: imprime estado inicial do motor
-    try:
-        hist_len = len(getattr(motor, 'historico_estados', []))
-    except Exception:
-        hist_len = getattr(getattr(motor, 'historico_estados', None),
-                           'quantidade_snapshots', lambda: 'N/A')()
-    print(
-        f"[DIAG] iniciar_servidor_web: relogio={getattr(motor, 'relogio', '?')} | historico_len={hist_len} | fila_novas={len(getattr(motor, 'fila_novas', []))}")
-    _gerar_svg_atual(motor, 'gantt_resultado.svg')
+    if motor is not None:
+        _gerar_svg_atual(motor, 'gantt_resultado.svg')
     handler = make_handler_class(motor, 'gantt_resultado.svg')
     server_address = (host, port)
     httpd = http.server.HTTPServer(server_address, handler)
