@@ -12,6 +12,4 @@ build/
 dist/
 *.spec
 
-
-
-*.svg
+gantt_resultado.svg
