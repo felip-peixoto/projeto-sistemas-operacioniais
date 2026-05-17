@@ -741,48 +741,118 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
             if path == '/' or path == '':
                 with self.server_lock:
                     svg_content = self._read_svg()
+                    motor = self.server_motor
+                    mode = type(self).server_mode
 
-                mode = type(self).server_mode
+                # 1. Monta o Card de Informações Gerais do Sistema
+                info_sistema_html = f"""
+                <div class="sys-card">
+                    <strong>Algoritmo Ativo:</strong> <span class="highlight">{motor.algoritmo.upper()}</span> | 
+                    <strong>Quantum:</strong> <span class="highlight">{motor.quantum}</span> | 
+                    <strong>Quantidade de CPUs:</strong> <span class="highlight">{len(motor.cpus)}</span>
+                </div>
+                """
 
-                # Default: show initial two options only when idle
+                # 2. Varre o sistema para pegar o TCB de todas as tarefas e montar a tabela
+                todas_tarefas = motor.fila_novas + motor.fila_prontas + \
+                    motor.fila_suspensas + motor.fila_concluidas
+                for cpu in motor.cpus:
+                    if cpu.tarefa_atual and cpu.tarefa_atual not in todas_tarefas:
+                        todas_tarefas.append(cpu.tarefa_atual)
+
+                todas_tarefas.sort(key=lambda t: t.id)
+
+                tabela_tcb_html = """
+                <table class="tcb-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Cor</th>
+                            <th>Prioridade</th>
+                            <th>Ingresso</th>
+                            <th>Duração</th>
+                            <th>Tempo Executado</th>
+                            <th>Estado Atual</th>
+                            <th>Forçar Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                """
+
+                for t in todas_tarefas:
+                    cor_hex = t.cor if t.cor.startswith("#") else f"#{t.cor}"
+                    tabela_tcb_html += f"""
+                    <tr>
+                        <td><strong>{t.id}</strong></td>
+                        <td><div style="background-color: {cor_hex}; width: 18px; height: 18px; border-radius: 3px; border: 1px solid #333; margin: auto;"></div></td>
+                        <td>{t.prioridade}</td>
+                        <td>{t.ingresso}</td>
+                        <td>{t.duracao}</td>
+                        <td>{t.tempo_executado}</td>
+                        <td><span class="badge state-{t.estado.lower()}">{t.estado}</span></td>
+                        <td>
+                            <form action="/editar" method="GET" style="display: flex; gap: 4px; justify-content: center; margin: 0;">
+                                <input type="hidden" name="id" value="{t.id}">
+                                <select name="estado" style="padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
+                                    <option value="">-- Alterar --</option>
+                                    <option value="Nova">Nova</option>
+                                    <option value="Pronta">Pronta</option>
+                                    <option value="Suspensa">Suspensa</option>
+                                    <option value="Concluida">Concluida</option>
+                                </select>
+                                <button type="submit" style="padding: 4px 8px; background: #2e7d32; color: white; border: none; border-radius: 4px; cursor: pointer;">Aplicar</button>
+                            </form>
+                        </td>
+                    </tr>
+                    """
+                tabela_tcb_html += "</tbody></table>"
+
                 if mode == 'idle':
-                    controls_html = (
-                        '<a class="button" href="/modo/passo">Modo Passo a Passo</a>'
-                        '<a class="button" href="/modo/completo">Execucao Completa</a>'
-                    )
+                    controls_html = '<a class="button" href="/modo/passo">Modo Passo a Passo</a><a class="button" href="/modo/completo">Execucao Completa</a>'
                     manual_html = ''
                 elif mode == 'passo':
-                    # In passo mode, hide initial buttons and show manual controls
                     controls_html = ''
                     manual_html = '<a class="button" href="/voltar">Voltar</a><a class="button" href="/avancar">Avancar</a>'
-                else:  # completo
+                else:
                     controls_html = '<a class="button" href="/modo/stop">Parar Execucao</a>'
                     manual_html = ''
 
-                # Reiniciar sempre disponível
                 reiniciar_html = '<a class="button" href="/reiniciar">Reiniciar</a>'
 
                 html = f'''<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Simulador - Gantt</title>
+  <title>Simulador S.O.</title>
   <style>
-    body{{display:flex;flex-direction:column;align-items:center;font-family:Arial,Helvetica,sans-serif;margin:20px;}}
+    body{{display:flex;flex-direction:column;align-items:center;font-family:Arial,sans-serif;margin:20px;background-color:#fafafa;color:#333;}}
+    .tick{{font-weight:700;font-size:16px;margin-bottom:12px;background:#333;color:#fff;padding:8px 16px;border-radius:20px;}}
+    .sys-card{{background:#fff;border:1px solid #e0e0e0;padding:12px 24px;border-radius:8px;margin-bottom:16px;box-shadow:0 2px 4px rgba(0,0,0,0.05);}}
+    .highlight{{color:#1976d2;font-weight:bold;}}
     .controls{{margin:12px;}}
-    a.button{{display:inline-block;padding:8px 12px;background:#1976d2;color:#fff;text-decoration:none;border-radius:4px;margin:0 6px}}
-    .tick{{font-weight:700;margin-bottom:8px}}
-    .svgwrap{{max-width:95%;overflow:auto;border:1px solid #ddd;padding:8px}}
+    a.button{{display:inline-block;padding:10px 16px;background:#1976d2;color:#fff;text-decoration:none;border-radius:4px;margin:0 6px;font-weight:bold;}}
+    .svgwrap{{max-width:95%;overflow:auto;border:1px solid #ddd;padding:16px;background:#fff;border-radius:8px;margin-bottom:24px;}}
+    .tcb-table{{width:85%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;border:1px solid #e0e0e0;text-align:center;}}
+    .tcb-table th{{background:#424242;color:#fff;padding:12px;font-size:14px;}}
+    .tcb-table td{{padding:10px;border-bottom:1px solid #eee;font-size:14px;}}
+    .badge{{display:inline-block;padding:4px 8px;border-radius:12px;font-size:12px;font-weight:bold;color:#fff;}}
+    .state-nova{{background:#ffb300;color:#000;}}
+    .state-pronta{{background:#29b6f6;}}
+    .state-executando{{background:#66bb6a;}}
+    .state-suspensa{{background:#ef5350;}}
+    .state-concluida{{background:#78909c;}}
   </style>
 </head>
 <body>
-  <div class="tick">Tick Atual: {getattr(self.server_motor, 'relogio', '?')} | Modo: {mode}</div>
-    <div class="controls">
-        {controls_html}
-        {manual_html}
-        {reiniciar_html}
-    </div>
-  <div class="svgwrap">{svg_content}</div>
+  <div class="tick">🕒 Tick Atual: {getattr(self.server_motor, 'relogio', '?')} | Estado: {mode.upper()}</div>
+  {info_sistema_html}
+  <div class="controls">{controls_html}{manual_html}{reiniciar_html}</div>
+  <div class="svgwrap">
+    <h3 style="margin-top:0;border-bottom:2px solid #1976d2;padding-bottom:6px;">📊 Gráfico de Gantt da Simulação</h3>
+    {svg_content}
+  </div>
+  <h3 style="margin-bottom:6px;">📦 Bloco de Controle de Tarefas (TCB)</h3>
+  {tabela_tcb_html}
 </body>
 </html>'''
 
@@ -897,7 +967,21 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                     except Exception as e:
                         print("[WEB] REINICIAR error:", e)
                 self._redirect_root()
+            elif path == '/editar':
+                with type(self).server_lock:
+                    try:
+                        query = urllib.parse.parse_qs(parsed.query)
+                        id_tarefa = query.get('id', [None])[0]
+                        novo_estado = query.get('estado', [None])[0]
 
+                        if id_tarefa and novo_estado:
+                            motor = type(self).server_motor
+                            sucesso, mensagem = motor.forcar_mudanca_estado(
+                                id_tarefa, novo_estado)
+                            print(f"[WEB EDIT] {mensagem}")
+                    except Exception as e:
+                        print("[WEB EDIT] Erro ao editar tarefa:", e)
+                self._redirect_root()
             else:
                 self.send_response(404)
                 self.send_header('Content-Type', 'text/plain; charset=utf-8')
