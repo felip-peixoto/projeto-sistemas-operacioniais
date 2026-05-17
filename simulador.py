@@ -38,7 +38,7 @@ class Simulador:
         Executa apenas UM instante de tempo (passo-a-passo).
         É isso que a UI vai chamar quando o usuário apertar 'Avançar'.
         """
-        # Verifica se já acabou tudo
+        # Verifica se já acabou tudo — evita avanços infinitos
         if getattr(self, 'total_tarefas_sistema', None) is not None and len(self.fila_concluidas) >= self.total_tarefas_sistema:
             return
 
