@@ -1,10 +1,12 @@
 import copy
 from estruturas import CPU
 from escalonadores import executar_escalonador
+import random
 
 
 class Simulador:
     def __init__(self, config):
+        random.seed()
         algoritmos_suportados = ["SRTF", "PRIOP"]
         if config["algoritmo"] not in algoritmos_suportados:
             print(

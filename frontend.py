@@ -214,12 +214,13 @@ class GeradorSVGGantt:
         }
 
         # Largura mínima para que a legenda (2 colunas de ~200px cada) não seja cortada
-        # MARGEM_ESQUERDA + COL1(200px) + COL2(200px) + margem direita
+        # 200px extra para o texto "X ticks ociosa" à direita das barras de CPU
         largura_minima_legenda = self.MARGEM_ESQUERDA + 200 + 200 + 40
         largura_por_ticks = (
             self.MARGEM_ESQUERDA +
             (self.total_ticks * self.LARGURA_CELULA) +
-            self.MARGEM_DIREITA
+            self.MARGEM_DIREITA +
+            120  # espaço para o texto "X ticks ociosa" à direita
         )
         self.largura_svg = max(largura_por_ticks, largura_minima_legenda)
 
@@ -365,8 +366,8 @@ class GeradorSVGGantt:
                     linhas.append(
                         f'<text x="{x + self.LARGURA_CELULA/2}" y="{y + self.ALTURA_CELULA/2 + 4}" font-size="10" font-family="Arial" text-anchor="middle" fill="#FFFFFF" font-weight="bold">P{cpu_id}</text>')
 
+         
                 elif estado == "Suspensa":
-                    # Cor preta conforme PDF
                     linhas.append(
                         f'<rect x="{x + padding}" y="{y + padding}" width="{self.LARGURA_CELULA - 2*padding}" height="{self.ALTURA_CELULA - 2*padding}" fill="#000000"/>')
 
@@ -986,12 +987,12 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
   <div class="card">
     <h2>ICSO30 - Sistemas Operacionais: Projeto A</h2>
     <h3>Felipe Dias Peixoto e Bruno Seiji Fujihara</h3>  
-    <p>Nenhum cenário carregado. Selecione um arquivo <code>.txt</code> para começar.</p>
+    <p>Nenhuma configuração carregada. Selecione um arquivo <code>.txt</code> para começar.</p>
     <form action="/selecionar_arquivo" method="GET" style="display:flex;gap:8px;justify-content:center;align-items:center;">
       <select name="arquivo">{opcoes_html}</select>
       <button type="submit">Carregar</button>
     </form>
-    {'<p style="color:#c00;margin-top:16px;">⚠️ Nenhum arquivo .txt encontrado na pasta do projeto.</p>' if not arquivos_txt else ''}
+    {'<p style="color:#c00;margin-top:16px;">Nenhum arquivo .txt encontrado na pasta do projeto.</p>' if not arquivos_txt else ''}
   </div>
 </body>
 </html>'''
@@ -1062,7 +1063,7 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                             <th>Duração Total</th>
                             <th>Tempo Executado</th>
                             <th>Estado Atual</th>
-                            <th>Ação Manual (Forçar Estado)</th>
+                            <th>Mudar Estado</th>
                         </tr>
                     </thead>
                     <tbody>
