@@ -366,7 +366,6 @@ class GeradorSVGGantt:
                     linhas.append(
                         f'<text x="{x + self.LARGURA_CELULA/2}" y="{y + self.ALTURA_CELULA/2 + 4}" font-size="10" font-family="Arial" text-anchor="middle" fill="#FFFFFF" font-weight="bold">P{cpu_id}</text>')
 
-         
                 elif estado == "Suspensa":
                     linhas.append(
                         f'<rect x="{x + padding}" y="{y + padding}" width="{self.LARGURA_CELULA - 2*padding}" height="{self.ALTURA_CELULA - 2*padding}" fill="#000000"/>')
@@ -702,7 +701,8 @@ def imprimir_estado_atual(motor: Any) -> None:
 
 
 def modificar_tarefa_manualmente(motor: Any) -> None:
-    todas_tarefas = motor.fila_novas + motor.fila_prontas + motor.fila_concluidas
+    todas_tarefas = motor.fila_novas + motor.fila_prontas + \
+        motor.fila_concluidas + motor.fila_suspensas
     for cpu in motor.cpus:
         if cpu.tarefa_atual:
             todas_tarefas.append(cpu.tarefa_atual)
@@ -766,7 +766,8 @@ def executar_passo_a_passo(motor: Any) -> None:
 
         motor.avancar_tick()
 
-        todas_tarefas = motor.fila_novas + motor.fila_prontas + motor.fila_concluidas
+        todas_tarefas = motor.fila_novas + motor.fila_prontas + \
+            motor.fila_concluidas + motor.fila_suspensas
         for cpu in motor.cpus:
             if cpu.tarefa_atual:
                 todas_tarefas.append(cpu.tarefa_atual)
@@ -803,7 +804,8 @@ def executar_completo(motor: Any) -> None:
             print("Abordado por limite de seguranca de ticks.")
             break
 
-    todas_tarefas = motor.fila_novas + motor.fila_prontas + motor.fila_concluidas
+    todas_tarefas = motor.fila_novas + motor.fila_prontas + \
+        motor.fila_concluidas + motor.fila_suspensas
     for cpu in motor.cpus:
         if cpu.tarefa_atual:
             todas_tarefas.append(cpu.tarefa_atual)
@@ -826,7 +828,9 @@ def imprimir_relatorio_ociosidade(motor: Any) -> None:
 def _montar_lista_tarefas_para_grafico(motor: Any) -> List[Any]:
     todas_tarefas = []
     try:
-        todas_tarefas = motor.fila_novas + motor.fila_prontas + motor.fila_concluidas
+        # Adicione + motor.fila_suspensas
+        todas_tarefas = motor.fila_novas + motor.fila_prontas + \
+            motor.fila_suspensas + motor.fila_concluidas
     except Exception:
         todas_tarefas = []
 
