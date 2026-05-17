@@ -104,14 +104,20 @@ class Simulador:
         self.total_tarefas_sistema = len(config["tarefas"])
 
     def salvar_snapshot(self):
+        import copy
+        # 1. Pega todas as tarefas do sistema onde quer que elas estejam
+        todas_tarefas = self.fila_novas + self.fila_prontas + \
+            self.fila_suspensas + self.fila_concluidas
+        for cpu in self.cpus:
+            if cpu.tarefa_atual and cpu.tarefa_atual not in todas_tarefas:
+                todas_tarefas.append(cpu.tarefa_atual)
+
+        # 2. Cria a "foto" (snapshot) do momento
         snapshot = {
-            "tempo": self.relogio,
             "cpus": copy.deepcopy(self.cpus),
-            "fila_novas": copy.deepcopy(self.fila_novas),  # Solução do Ponto 1
-            "fila_prontas": copy.deepcopy(self.fila_prontas),
-            "fila_suspensas": copy.deepcopy(self.fila_suspensas),
-            "fila_concluidas": copy.deepcopy(self.fila_concluidas),
-            "sorteio": self.houve_sorteio_neste_tick  # <--- SALVA AQUI
+            "tarefas": copy.deepcopy(todas_tarefas),
+            # Salva a aleatoriedade!
+            "sorteio": getattr(self, 'houve_sorteio_neste_tick', False)
         }
         self.historico_estados.append(snapshot)
 

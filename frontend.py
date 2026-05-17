@@ -295,31 +295,83 @@ class GeradorSVGGantt:
                 break
 
             snapshot = self.snapshots[tick]
-            cpus = snapshot.get("cpus", [])
 
-            tarefas_executando = set()
-            for cpu in cpus:
-                if hasattr(cpu, 'tarefa_atual') and cpu.tarefa_atual is not None:
-                    tarefas_executando.add(cpu.tarefa_atual.id)
+            # 1. ÍCONE DE ALEATORIEDADE/SORTEIO (Req 4.3)
+            # Coloca um dado no topo da régua de tempo caso o escalonador tenha feito sorteio
+            houve_sorteio = snapshot.get("sorteio", False)
+            if houve_sorteio:
+                x_sorteio = self.calcular_posicao_x(
+                    tick) + (self.LARGURA_CELULA / 2)
+                y_sorteio = self.MARGEM_TOPO - 15
+                linhas.append(
+                    f'<text x="{x_sorteio}" y="{y_sorteio}" font-size="14" text-anchor="middle">🎲</text>')
 
-            for idx_tarefa, tarefa in enumerate(self.tarefas_ordenadas):
+            # Mapeia o estado exato das tarefas nesta "foto" do tempo
+            tarefas_neste_tick = snapshot.get("tarefas", [])
+            mapa_estado_tarefa = {t.id: t for t in tarefas_neste_tick}
+
+            for idx_tarefa, tarefa_base in enumerate(self.tarefas_ordenadas):
                 x = self.calcular_posicao_x(tick)
                 y = self.calcular_posicao_y(idx_tarefa)
-
-                if tarefa.id in tarefas_executando:
-                    cor = self.obter_cor_tarefa(tarefa.id)
-                else:
-                    cor = self.COR_OCIOSA
-
                 padding = 2
-                linhas.append(
-                    f'<rect x="{x + padding}" y="{y + padding}" '
-                    f'width="{self.LARGURA_CELULA - 2*padding}" '
-                    f'height="{self.ALTURA_CELULA - 2*padding}" '
-                    f'fill="{cor}"/>'
-                )
 
-        linhas.append('')
+                tarefa_momento = mapa_estado_tarefa.get(tarefa_base.id)
+                if not tarefa_momento:
+                    continue
+
+                estado = getattr(tarefa_momento, 'estado', 'Nova')
+                cor_base = self.obter_cor_tarefa(tarefa_base.id)
+
+                # ==========================================
+                # REQUISITO 2.1: CORES E PROCESSADORES
+                # ==========================================
+                if estado == "Executando":
+                    # Pinta com a cor da tarefa e escreve o ID da CPU dentro (ex: P0)
+                    cpu_id = ""
+                    for cpu in snapshot.get("cpus", []):
+                        if getattr(cpu, 'tarefa_atual', None) and cpu.tarefa_atual.id == tarefa_base.id:
+                            cpu_id = str(cpu.id)
+                            break
+
+                    linhas.append(
+                        f'<rect x="{x + padding}" y="{y + padding}" width="{self.LARGURA_CELULA - 2*padding}" height="{self.ALTURA_CELULA - 2*padding}" fill="{cor_base}"/>')
+                    linhas.append(
+                        f'<text x="{x + self.LARGURA_CELULA/2}" y="{y + self.ALTURA_CELULA/2 + 4}" font-size="10" font-family="Arial" text-anchor="middle" fill="#FFFFFF" font-weight="bold">P{cpu_id}</text>')
+
+                elif estado == "Suspensa":
+                    # Cor preta conforme PDF
+                    linhas.append(
+                        f'<rect x="{x + padding}" y="{y + padding}" width="{self.LARGURA_CELULA - 2*padding}" height="{self.ALTURA_CELULA - 2*padding}" fill="#000000"/>')
+
+                elif estado == "Pronta":
+                    # Ausência de cor (transparente), mas com borda tracejada pra ver que ela está na fila
+                    linhas.append(
+                        f'<rect x="{x + padding}" y="{y + padding}" width="{self.LARGURA_CELULA - 2*padding}" height="{self.ALTURA_CELULA - 2*padding}" fill="none" stroke="{cor_base}" stroke-width="2" stroke-dasharray="2,2"/>')
+
+                # ==========================================
+                # REQUISITO 2.2: ÍCONES DE INGRESSO E CONCLUSÃO
+                # ==========================================
+                # Ícone de Ingresso (Uma bolinha verde)
+                if tick == tarefa_base.ingresso:
+                    cx = x + padding + 5
+                    cy = y + padding + 5
+                    linhas.append(
+                        f'<circle cx="{cx}" cy="{cy}" r="4" fill="#00FF00" stroke="#000"/>')
+
+                # Ícone de Conclusão (Um X vermelho no exato instante em que ela conclui)
+                estado_anterior = "Nova"
+                if tick > 0:
+                    snap_ant = self.snapshots[tick-1]
+                    t_ant = {t.id: t for t in snap_ant.get(
+                        "tarefas", [])}.get(tarefa_base.id)
+                    if t_ant:
+                        estado_anterior = getattr(t_ant, 'estado', 'Nova')
+
+                if estado == "Concluida" and estado_anterior != "Concluida":
+                    cx = x + (self.LARGURA_CELULA / 2)
+                    cy = y + (self.ALTURA_CELULA / 2)
+                    linhas.append(
+                        f'<text x="{cx}" y="{cy + 5}" font-size="14" text-anchor="middle">❌</text>')
 
         # Labels de tempo
         for tick in range(0, self.total_ticks + 1, max(1, self.total_ticks // 10)):
@@ -644,6 +696,7 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
         server_mode = 'idle'  # 'idle', 'passo', 'completo'
         server_worker = None
         server_stop_event = None
+        server_arquivo_atual = 'config.txt'  # Guarda qual arquivo está ativo
 
         def _redirect_root(self):
             self.send_response(303)
@@ -666,7 +719,6 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
             def worker():
                 motor = type(self).server_motor
                 total_tarefas = getattr(motor, 'total_tarefas_sistema', None)
-                # heuristica de fim: ultimo ingresso + soma das duracoes + margem
                 try:
                     tarefas_all = getattr(motor, 'fila_novas', [
                     ]) + getattr(motor, 'fila_prontas', []) + getattr(motor, 'fila_concluidas', [])
@@ -683,11 +735,9 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                 while not type(self).server_stop_event.is_set():
                     with type(self).server_lock:
                         try:
-                            # verifica se terminou por contagem
                             if total_tarefas is not None and len(motor.fila_concluidas) >= total_tarefas:
                                 break
 
-                            # verifica se nao ha mais trabalho (filas vazias e CPUs ociosas)
                             filas_vazias = (len(getattr(motor, 'fila_prontas', [])) == 0 and
                                             len(getattr(motor, 'fila_novas', [])) == 0)
                             cpus_ociosas = all(getattr(
@@ -695,18 +745,14 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                             if filas_vazias and cpus_ociosas:
                                 break
 
-                            # safety by expected_end
                             if getattr(motor, 'relogio', 0) > expected_end:
                                 break
 
-                            # avancar tick
                             motor.avancar_tick()
                             _gerar_svg_atual(motor, svg_path)
-                            # log every 5 ticks
+
                             if getattr(motor, 'relogio', 0) % 5 == 0 and getattr(motor, 'relogio', 0) != last_log_time:
                                 last_log_time = getattr(motor, 'relogio', 0)
-                                print(
-                                    f"[WORKER] relogio={last_log_time} | novas={len(getattr(motor, 'fila_novas', []))} prontas={len(getattr(motor, 'fila_prontas', []))} concluidas={len(getattr(motor, 'fila_concluidas', []))}")
                         except Exception:
                             break
                     time.sleep(0.01)
@@ -714,7 +760,6 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                     if safety <= 0:
                         break
 
-                # Garante svg final e volta para idle
                 try:
                     _gerar_svg_atual(motor, svg_path)
                 except Exception:
@@ -744,7 +789,33 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                     motor = self.server_motor
                     mode = type(self).server_mode
 
-                # 1. Monta o Card de Informações Gerais do Sistema
+                # 1. Escaneia a pasta procurando por arquivos TXT de configuração
+                arquivos_txt = [f for f in os.listdir(
+                    '.') if f.endswith('.txt')]
+
+                seletor_arquivo_html = ""
+                if mode == 'idle':
+                    opcoes_html = "".join(
+                        [f'<option value="{f}" {"selected" if f == type(self).server_arquivo_atual else ""}>{f}</option>' for f in arquivos_txt])
+                    seletor_arquivo_html = f"""
+                    <div class="sys-card" style="text-align: center;">
+                        <form action="/selecionar_arquivo" method="GET" style="display: flex; gap: 8px; justify-content: center; align-items: center; margin: 0;">
+                            <strong>📁 Selecionar Cenário (TXT):</strong>
+                            <select name="arquivo" style="padding: 6px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer;">
+                                {opcoes_html}
+                            </select>
+                            <button type="submit" style="padding: 6px 12px; background: #2e7d32; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Carregar Arquivo</button>
+                        </form>
+                    </div>
+                    """
+                else:
+                    seletor_arquivo_html = f"""
+                    <div class="sys-card" style="text-align: center; background-color: #eee;">
+                        <strong>🔒 Arquivo em Execução:</strong> <span class="highlight">{type(self).server_arquivo_atual}</span> (Reinicie para trocar)
+                    </div>
+                    """
+
+                # 2. Monta o Card de Informações Gerais do Sistema
                 info_sistema_html = f"""
                 <div class="sys-card">
                     <strong>Algoritmo Ativo:</strong> <span class="highlight">{motor.algoritmo.upper()}</span> | 
@@ -753,7 +824,7 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                 </div>
                 """
 
-                # 2. Varre o sistema para pegar o TCB de todas as tarefas e montar a tabela
+                # 3. Varre o sistema para pegar o TCB de todas as tarefas e montar a tabela
                 todas_tarefas = motor.fila_novas + motor.fila_prontas + \
                     motor.fila_suspensas + motor.fila_concluidas
                 for cpu in motor.cpus:
@@ -766,14 +837,14 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                 <table class="tcb-table">
                     <thead>
                         <tr>
-                            <th>ID</th>
+                            <th>ID da Tarefa</th>
                             <th>Cor</th>
                             <th>Prioridade</th>
                             <th>Ingresso</th>
-                            <th>Duração</th>
+                            <th>Duração Total</th>
                             <th>Tempo Executado</th>
                             <th>Estado Atual</th>
-                            <th>Forçar Estado</th>
+                            <th>Ação Manual (Forçar Estado)</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -787,20 +858,20 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                         <td><div style="background-color: {cor_hex}; width: 18px; height: 18px; border-radius: 3px; border: 1px solid #333; margin: auto;"></div></td>
                         <td>{t.prioridade}</td>
                         <td>{t.ingresso}</td>
-                        <td>{t.duracao}</td>
-                        <td>{t.tempo_executado}</td>
+                        <td>{t.duracao} ticks</td>
+                        <td>{t.tempo_executado} ticks</td>
                         <td><span class="badge state-{t.estado.lower()}">{t.estado}</span></td>
                         <td>
                             <form action="/editar" method="GET" style="display: flex; gap: 4px; justify-content: center; margin: 0;">
                                 <input type="hidden" name="id" value="{t.id}">
                                 <select name="estado" style="padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
-                                    <option value="">-- Alterar --</option>
+                                    <option value="">-- Alterar para --</option>
                                     <option value="Nova">Nova</option>
                                     <option value="Pronta">Pronta</option>
                                     <option value="Suspensa">Suspensa</option>
                                     <option value="Concluida">Concluida</option>
                                 </select>
-                                <button type="submit" style="padding: 4px 8px; background: #2e7d32; color: white; border: none; border-radius: 4px; cursor: pointer;">Aplicar</button>
+                                <button type="submit" style="padding: 4px 8px; background: #d32f2f; color: white; border: none; border-radius: 4px; cursor: pointer;">Aplicar</button>
                             </form>
                         </td>
                     </tr>
@@ -808,7 +879,10 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                 tabela_tcb_html += "</tbody></table>"
 
                 if mode == 'idle':
-                    controls_html = '<a class="button" href="/modo/passo">Modo Passo a Passo</a><a class="button" href="/modo/completo">Execucao Completa</a>'
+                    controls_html = (
+                        '<a class="button" href="/modo/passo">Modo Passo a Passo</a>'
+                        '<a class="button" href="/modo/completo">Execucao Completa</a>'
+                    )
                     manual_html = ''
                 elif mode == 'passo':
                     controls_html = ''
@@ -823,16 +897,16 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Simulador S.O.</title>
+  <title>Simulador S.O. - Dashboard</title>
   <style>
     body{{display:flex;flex-direction:column;align-items:center;font-family:Arial,sans-serif;margin:20px;background-color:#fafafa;color:#333;}}
     .tick{{font-weight:700;font-size:16px;margin-bottom:12px;background:#333;color:#fff;padding:8px 16px;border-radius:20px;}}
-    .sys-card{{background:#fff;border:1px solid #e0e0e0;padding:12px 24px;border-radius:8px;margin-bottom:16px;box-shadow:0 2px 4px rgba(0,0,0,0.05);}}
+    .sys-card{{background:#fff;border:1px solid #e0e0e0;padding:12px 24px;border-radius:8px;margin-bottom:12px;box-shadow:0 2px 4px rgba(0,0,0,0.05);min-width: 400px;}}
     .highlight{{color:#1976d2;font-weight:bold;}}
     .controls{{margin:12px;}}
     a.button{{display:inline-block;padding:10px 16px;background:#1976d2;color:#fff;text-decoration:none;border-radius:4px;margin:0 6px;font-weight:bold;}}
-    .svgwrap{{max-width:95%;overflow:auto;border:1px solid #ddd;padding:16px;background:#fff;border-radius:8px;margin-bottom:24px;}}
-    .tcb-table{{width:85%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;border:1px solid #e0e0e0;text-align:center;}}
+    .svgwrap{{max-width:95%;overflow:auto;border:1px solid #ddd;padding:16px;background:#fff;border-radius:8px;margin-bottom:24px;box-shadow:0 2px 8px rgba(0,0,0,0.05);}}
+    .tcb-table{{width:85%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.05);border:1px solid #e0e0e0;margin-top:12px;text-align:center;}}
     .tcb-table th{{background:#424242;color:#fff;padding:12px;font-size:14px;}}
     .tcb-table td{{padding:10px;border-bottom:1px solid #eee;font-size:14px;}}
     .badge{{display:inline-block;padding:4px 8px;border-radius:12px;font-size:12px;font-weight:bold;color:#fff;}}
@@ -845,13 +919,22 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
 </head>
 <body>
   <div class="tick">🕒 Tick Atual: {getattr(self.server_motor, 'relogio', '?')} | Estado: {mode.upper()}</div>
+  
+  {seletor_arquivo_html}
   {info_sistema_html}
-  <div class="controls">{controls_html}{manual_html}{reiniciar_html}</div>
+
+  <div class="controls">
+      {controls_html}
+      {manual_html}
+      {reiniciar_html}
+  </div>
+  
   <div class="svgwrap">
     <h3 style="margin-top:0;border-bottom:2px solid #1976d2;padding-bottom:6px;">📊 Gráfico de Gantt da Simulação</h3>
     {svg_content}
   </div>
-  <h3 style="margin-bottom:6px;">📦 Bloco de Controle de Tarefas (TCB)</h3>
+
+  <h3 style="margin-bottom:6px;">📦 Bloco de Controle de Tarefas (TCB) & Debugger</h3>
   {tabela_tcb_html}
 </body>
 </html>'''
@@ -863,110 +946,25 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                 self.end_headers()
                 self.wfile.write(encoded)
 
-            elif path == '/avancar':
+            elif path == '/selecionar_arquivo':
                 with type(self).server_lock:
                     try:
-                        motor = type(self).server_motor
-                        print(
-                            f"[WEB] AVANCAR pressed | before relogio={getattr(motor, 'relogio', '?')} | novas={len(getattr(motor, 'fila_novas', []))} prontas={len(getattr(motor, 'fila_prontas', []))} concluidas={len(getattr(motor, 'fila_concluidas', []))}")
-                        # permit only in passo mode
-                        if type(self).server_mode == 'passo':
-                            motor.avancar_tick()
-                            _gerar_svg_atual(motor, svg_path)
-                            print(
-                                f"[WEB] AVANCAR result | after relogio={getattr(motor, 'relogio', '?')} | novas={len(getattr(motor, 'fila_novas', []))} prontas={len(getattr(motor, 'fila_prontas', []))} concluidas={len(getattr(motor, 'fila_concluidas', []))}")
-                        else:
-                            print(
-                                f"[WEB] AVANCAR ignored (mode={type(self).server_mode})")
+                        query = urllib.parse.parse_qs(parsed.query)
+                        arquivo_escolhido = query.get('arquivo', [None])[0]
+
+                        if arquivo_escolhido and type(self).server_mode == 'idle':
+                            cfg = ler_arquivo_configuracao(arquivo_escolhido)
+                            if cfg:
+                                type(self).server_motor = Simulador(cfg)
+                                type(self).server_arquivo_atual = arquivo_escolhido
+                                _gerar_svg_atual(
+                                    type(self).server_motor, svg_path)
+                                print(
+                                    f"[WEB] Novo cenário carregado: {arquivo_escolhido}")
                     except Exception as e:
-                        print("[WEB] AVANCAR error:", e)
+                        print("[WEB] Erro ao carregar novo arquivo:", e)
                 self._redirect_root()
 
-            elif path == '/voltar':
-                with type(self).server_lock:
-                    try:
-                        motor = type(self).server_motor
-                        print(
-                            f"[WEB] VOLTAR pressed | before relogio={getattr(motor, 'relogio', '?')} | novas={len(getattr(motor, 'fila_novas', []))} prontas={len(getattr(motor, 'fila_prontas', []))} concluidas={len(getattr(motor, 'fila_concluidas', []))}")
-                        # permit only in passo mode
-                        if type(self).server_mode == 'passo':
-                            motor.retroceder_tick()
-                            _gerar_svg_atual(motor, svg_path)
-                            print(
-                                f"[WEB] VOLTAR result | after relogio={getattr(motor, 'relogio', '?')} | novas={len(getattr(motor, 'fila_novas', []))} prontas={len(getattr(motor, 'fila_prontas', []))} concluidas={len(getattr(motor, 'fila_concluidas', []))}")
-                        else:
-                            print(
-                                f"[WEB] VOLTAR ignored (mode={type(self).server_mode})")
-                    except Exception as e:
-                        print("[WEB] VOLTAR error:", e)
-                self._redirect_root()
-
-            elif path == '/modo/completo':
-                try:
-                    # start worker under lock, then wait for it to finish (but don't hold lock while joining)
-                    with type(self).server_lock:
-                        print(
-                            f"[WEB] MODO completo requested | relogio={getattr(type(self).server_motor, 'relogio', '?')}")
-                        self._start_completo()
-                        print("[WEB] MODO completo started")
-
-                    worker = type(self).server_worker
-                    if worker:
-                        # wait until worker thread finishes to show final result
-                        worker.join()
-                        print("[WEB] MODO completo finished")
-                except Exception as e:
-                    print("[WEB] MODO completo error:", e)
-                self._redirect_root()
-
-            elif path == '/modo/passo':
-                with type(self).server_lock:
-                    try:
-                        # stop any background worker
-                        self._stop_worker()
-                        type(self).server_mode = 'passo'
-                        _gerar_svg_atual(type(self).server_motor, svg_path)
-                        print(
-                            f"[WEB] MODO passo selected | relogio={getattr(type(self).server_motor, 'relogio', '?')}")
-                    except Exception as e:
-                        print("[WEB] MODO passo error:", e)
-                self._redirect_root()
-
-            elif path == '/modo/stop':
-                with type(self).server_lock:
-                    try:
-                        print(
-                            f"[WEB] MODO stop requested | relogio={getattr(type(self).server_motor, 'relogio', '?')}")
-                        self._stop_worker()
-                        print("[WEB] MODO stop executed")
-                    except Exception as e:
-                        print("[WEB] MODO stop error:", e)
-                self._redirect_root()
-
-            elif path == '/reiniciar':
-                with type(self).server_lock:
-                    try:
-                        print(
-                            f"[WEB] REINICIAR requested | relogio={getattr(type(self).server_motor, 'relogio', '?')}")
-                        # stop background worker if any
-                        self._stop_worker()
-                        cfg = None
-                        try:
-                            cfg = ler_arquivo_configuracao("config.txt")
-                        except Exception as e:
-                            print("[WEB] REINICIAR config load error:", e)
-
-                        if not cfg:
-                            print(
-                                "[WEB] REINICIAR failed: config.txt not found or invalid")
-                        else:
-                            type(self).server_motor = Simulador(cfg)
-                            _gerar_svg_atual(type(self).server_motor, svg_path)
-                            type(self).server_mode = 'idle'
-                            print("[WEB] REINICIAR done: motor reset")
-                    except Exception as e:
-                        print("[WEB] REINICIAR error:", e)
-                self._redirect_root()
             elif path == '/editar':
                 with type(self).server_lock:
                     try:
@@ -982,6 +980,78 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                     except Exception as e:
                         print("[WEB EDIT] Erro ao editar tarefa:", e)
                 self._redirect_root()
+
+            elif path == '/avancar':
+                with type(self).server_lock:
+                    try:
+                        motor = type(self).server_motor
+                        if type(self).server_mode == 'passo':
+                            motor.avancar_tick()
+                            _gerar_svg_atual(motor, svg_path)
+                    except Exception as e:
+                        print("[WEB] AVANCAR error:", e)
+                self._redirect_root()
+
+            elif path == '/voltar':
+                with type(self).server_lock:
+                    try:
+                        motor = type(self).server_motor
+                        if type(self).server_mode == 'passo':
+                            motor.retroceder_tick()
+                            _gerar_svg_atual(motor, svg_path)
+                    except Exception as e:
+                        print("[WEB] VOLTAR error:", e)
+                self._redirect_root()
+
+            elif path == '/modo/completo':
+                try:
+                    with type(self).server_lock:
+                        self._start_completo()
+                    worker = type(self).server_worker
+                    if worker:
+                        worker.join()
+                except Exception as e:
+                    print("[WEB] MODO completo error:", e)
+                self._redirect_root()
+
+            elif path == '/modo/passo':
+                with type(self).server_lock:
+                    try:
+                        self._stop_worker()
+                        type(self).server_mode = 'passo'
+                        _gerar_svg_atual(type(self).server_motor, svg_path)
+                    except Exception as e:
+                        print("[WEB] MODO passo error:", e)
+                self._redirect_root()
+
+            elif path == '/modo/stop':
+                with type(self).server_lock:
+                    try:
+                        self._stop_worker()
+                    except Exception as e:
+                        print("[WEB] MODO stop error:", e)
+                self._redirect_root()
+
+            elif path == '/reiniciar':
+                with type(self).server_lock:
+                    try:
+                        self._stop_worker()
+                        cfg = None
+                        try:
+                            # Recarrega usando dinamicamente o arquivo ativo selecionado
+                            cfg = ler_arquivo_configuracao(
+                                type(self).server_arquivo_atual)
+                        except Exception as e:
+                            print("[WEB] REINICIAR config load error:", e)
+
+                        if cfg:
+                            type(self).server_motor = Simulador(cfg)
+                            _gerar_svg_atual(type(self).server_motor, svg_path)
+                            type(self).server_mode = 'idle'
+                    except Exception as e:
+                        print("[WEB] REINICIAR error:", e)
+                self._redirect_root()
+
             else:
                 self.send_response(404)
                 self.send_header('Content-Type', 'text/plain; charset=utf-8')
@@ -989,7 +1059,6 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                 self.wfile.write(b'404 Not Found')
 
         def log_message(self, format, *args):
-            # Silencia logs de acerto no console para ficar mais limpo
             return
 
     return SimHandler
@@ -1014,26 +1083,3 @@ def iniciar_servidor_web(motor: Any, host: str = '127.0.0.1', port: int = 8000):
     except KeyboardInterrupt:
         print('\nServidor finalizado pelo usuario (KeyboardInterrupt)')
         httpd.server_close()
-
-
-def main() -> None:
-    print("Iniciando o Sistema Operacional...")
-    config = ler_arquivo_configuracao("config.txt")
-    if not config:
-        return
-
-    motor = Simulador(config)
-
-    print("\nSelecione o Modo de Execucao (Req 1.5):")
-    print("1 - Modo Passo a Passo (com controle manual)")
-    print("2 - Execucao Completa (resultado direto)")
-    escolha = input("Opcao: ").strip()
-
-    if escolha == '2':
-        executar_completo(motor)
-    else:
-        executar_passo_a_passo(motor)
-
-
-if __name__ == "__main__":
-    main()
