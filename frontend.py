@@ -65,7 +65,8 @@ def ler_configuracao(caminho_arquivo: str = "config.txt") -> dict:
 
     with caminho.open(mode="r", encoding="utf-8", newline="") as arquivo:
         leitor = csv.reader(arquivo, delimiter=";")
-        linhas = [linha for linha in leitor if any(campo.strip() for campo in linha)]
+        linhas = [linha for linha in leitor if any(
+            campo.strip() for campo in linha)]
 
     if not linhas:
         raise ValueError("Arquivo de configuracao vazio.")
@@ -90,9 +91,11 @@ def ler_configuracao(caminho_arquivo: str = "config.txt") -> dict:
 
         id_tarefa = limpar_texto(linha[0])
         cor = limpar_texto(linha[1])
-        ingresso = converter_inteiro(linha[2], f"ingresso linha {numero_linha}")
+        ingresso = converter_inteiro(
+            linha[2], f"ingresso linha {numero_linha}")
         duracao = converter_inteiro(linha[3], f"duracao linha {numero_linha}")
-        prioridade = converter_inteiro(linha[4], f"prioridade linha {numero_linha}")
+        prioridade = converter_inteiro(
+            linha[4], f"prioridade linha {numero_linha}")
         lista_eventos = parse_lista_eventos(linha[5])
 
         tarefas.append(
@@ -127,41 +130,41 @@ def imprimir_resultado(dados: dict) -> None:
 
 class GerenciadorHistorico:
     # Gerencia snapshots para voltar/avancar no tempo
-    
+
     def __init__(self):
         self.snapshots: List[Dict[str, Any]] = []
         self.posicao_atual: int = -1
-    
+
     def salvar_snapshot(self, estado_cpus: Any, estado_tarefas: Any) -> None:
         # Remove snapshots posteriores se estava voltando
         if self.posicao_atual < len(self.snapshots) - 1:
             self.snapshots = self.snapshots[:self.posicao_atual + 1]
-        
+
         snapshot = {
             "cpus": copy.deepcopy(estado_cpus),
             "tarefas": copy.deepcopy(estado_tarefas)
         }
-        
+
         self.snapshots.append(snapshot)
         self.posicao_atual = len(self.snapshots) - 1
-    
+
     def voltar(self) -> Optional[Tuple[Any, Any]]:
         if self.posicao_atual > 0:
             self.posicao_atual -= 1
             snapshot = self.snapshots[self.posicao_atual]
             return (snapshot["cpus"], snapshot["tarefas"])
         return None
-    
+
     def avancar(self) -> Optional[Tuple[Any, Any]]:
         if self.posicao_atual < len(self.snapshots) - 1:
             self.posicao_atual += 1
             snapshot = self.snapshots[self.posicao_atual]
             return (snapshot["cpus"], snapshot["tarefas"])
         return None
-    
+
     def esta_no_presente(self) -> bool:
         return self.posicao_atual == len(self.snapshots) - 1
-    
+
     def quantidade_snapshots(self) -> int:
         return len(self.snapshots)
 
@@ -170,17 +173,17 @@ class GerenciadorHistorico:
 
 class GeradorSVGGantt:
     # Gera grafico Gantt em SVG puro (sem libs externas)
-    
+
     LARGURA_CELULA = 30
     ALTURA_CELULA = 40
     MARGEM_ESQUERDA = 150
     MARGEM_TOPO = 80
     MARGEM_DIREITA = 20
     MARGEM_RODAPE = 80
-    
+
     COR_OCIOSA = "#F5F5F5"
     COR_TEXTO = "#000000"
-    
+
     def __init__(self, historico: Any, lista_tarefas_tcb: List[Any]):
         self.historico = historico
         self.tarefas_tcb = lista_tarefas_tcb
@@ -194,127 +197,120 @@ class GeradorSVGGantt:
         else:
             self.snapshots = historico
             self.total_ticks = len(historico)
-        
+
         self.tarefas_ordenadas = sorted(
             lista_tarefas_tcb,
             key=lambda t: t.id,
             reverse=True
         )
         self.num_tarefas = len(self.tarefas_ordenadas)
-        
+
         self.mapa_tarefa_indice = {
             tarefa.id: idx for idx, tarefa in enumerate(self.tarefas_ordenadas)
         }
-        
+
         self.mapa_tarefa_cor = {
             tarefa.id: tarefa.cor for tarefa in self.tarefas_tcb
         }
-        
+
         self.largura_svg = (
             self.MARGEM_ESQUERDA +
             (self.total_ticks * self.LARGURA_CELULA) +
             self.MARGEM_DIREITA
         )
-        
+
         self.altura_svg = (
             self.MARGEM_TOPO +
             (self.num_tarefas * self.ALTURA_CELULA) +
             self.MARGEM_RODAPE
         )
-    
+
     def obter_cor_tarefa(self, id_tarefa: str) -> str:
-            # Pega a cor que veio do arquivo (ex: "vermelho", "azul")
-            cor_pt = str(self.mapa_tarefa_cor.get(id_tarefa, "")).strip().lower()
+        # Lê a cor direto da TCB, que já deve vir no formato Hexadecimal do txt (ex: FF0000)
+        cor_lida = str(self.mapa_tarefa_cor.get(id_tarefa, "000000")).strip()
 
-            # Dicionário de tradução de Português para cores válidas no SVG (Hexadecimal)
-            dicionario_cores = {
-                "vermelho": "#FF0000",
-                "azul": "#0000FF",
-                "verde": "#008000",  # Verde clássico
-                "amarelo": "#FFFF00",
-                "preto": "#000000",
-                "branco": "#FFFFFF",
-                "roxo": "#800080",
-                "laranja": "#FFA500",
-                "rosa": "#FFC0CB",
-                "cinza": "#808080",
-                "ciano": "#00FFFF",
-                "magenta": "#FF00FF",
-                "marrom": "#A52A2A"
-            }
+        # Adiciona o hashtag '#' na frente caso não tenha vindo
+        if not cor_lida.startswith("#"):
+            return f"#{cor_lida}"
+        return cor_lida
 
-            # Retorna a cor mapeada. Se o professor inventar uma cor que não está no dicionário, cai no padrão (preto)
-            return dicionario_cores.get(cor_pt, "#000000")
-    
     def calcular_posicao_x(self, tick: int) -> float:
         return self.MARGEM_ESQUERDA + (tick * self.LARGURA_CELULA)
-    
+
     def calcular_posicao_y(self, indice_tarefa: int) -> float:
         return self.MARGEM_TOPO + (indice_tarefa * self.ALTURA_CELULA)
-    
+
     def gerar_svg_completo(self) -> str:
         linhas = []
-        
+
         linhas.append('<?xml version="1.0" encoding="UTF-8"?>')
         linhas.append('<svg xmlns="http://www.w3.org/2000/svg"')
         linhas.append(f'     width="{self.largura_svg}"')
         linhas.append(f'     height="{self.altura_svg}"')
-        linhas.append(f'     viewBox="0 0 {self.largura_svg} {self.altura_svg}">')
+        linhas.append(
+            f'     viewBox="0 0 {self.largura_svg} {self.altura_svg}">')
         linhas.append('')
-        
+
         linhas.append('<defs>')
         linhas.append('  <style type="text/css">')
-        linhas.append('    .label { font-size: 12px; font-family: Arial, sans-serif; }')
-        linhas.append('    .tick { font-size: 10px; font-family: Arial, sans-serif; }')
+        linhas.append(
+            '    .label { font-size: 12px; font-family: Arial, sans-serif; }')
+        linhas.append(
+            '    .tick { font-size: 10px; font-family: Arial, sans-serif; }')
         linhas.append('    rect { stroke: #333333; stroke-width: 1; }')
         linhas.append('  </style>')
         linhas.append('</defs>')
         linhas.append('')
-        
-        linhas.append(f'<rect x="0" y="0" width="{self.largura_svg}" height="{self.altura_svg}"')
-        linhas.append('      fill="#FFFFFF" stroke="#000000" stroke-width="2"/>')
+
+        linhas.append(
+            f'<rect x="0" y="0" width="{self.largura_svg}" height="{self.altura_svg}"')
+        linhas.append(
+            '      fill="#FFFFFF" stroke="#000000" stroke-width="2"/>')
         linhas.append('')
-        
+
         # Grid vertical
         for tick in range(self.total_ticks + 1):
             x = self.calcular_posicao_x(tick)
             y_inicio = self.MARGEM_TOPO
             y_fim = self.MARGEM_TOPO + (self.num_tarefas * self.ALTURA_CELULA)
-            linhas.append(f'<line x1="{x}" y1="{y_inicio}" x2="{x}" y2="{y_fim}" stroke="#CCCCCC" stroke-width="0.5"/>')
-        
+            linhas.append(
+                f'<line x1="{x}" y1="{y_inicio}" x2="{x}" y2="{y_fim}" stroke="#CCCCCC" stroke-width="0.5"/>')
+
         linhas.append('')
-        
+
         # Grid horizontal
         for idx_tarefa in range(self.num_tarefas + 1):
             y = self.calcular_posicao_y(idx_tarefa)
             x_inicio = self.MARGEM_ESQUERDA
-            x_fim = self.MARGEM_ESQUERDA + (self.total_ticks * self.LARGURA_CELULA)
-            linhas.append(f'<line x1="{x_inicio}" y1="{y}" x2="{x_fim}" y2="{y}" stroke="#CCCCCC" stroke-width="0.5"/>')
-        
+            x_fim = self.MARGEM_ESQUERDA + \
+                (self.total_ticks * self.LARGURA_CELULA)
+            linhas.append(
+                f'<line x1="{x_inicio}" y1="{y}" x2="{x_fim}" y2="{y}" stroke="#CCCCCC" stroke-width="0.5"/>')
+
         linhas.append('')
-        
+
         # Blocos de tarefas
         for tick in range(self.total_ticks):
             if tick >= len(self.snapshots):
                 break
-            
+
             snapshot = self.snapshots[tick]
             cpus = snapshot.get("cpus", [])
-            
+
             tarefas_executando = set()
             for cpu in cpus:
                 if hasattr(cpu, 'tarefa_atual') and cpu.tarefa_atual is not None:
                     tarefas_executando.add(cpu.tarefa_atual.id)
-            
+
             for idx_tarefa, tarefa in enumerate(self.tarefas_ordenadas):
                 x = self.calcular_posicao_x(tick)
                 y = self.calcular_posicao_y(idx_tarefa)
-                
+
                 if tarefa.id in tarefas_executando:
                     cor = self.obter_cor_tarefa(tarefa.id)
                 else:
                     cor = self.COR_OCIOSA
-                
+
                 padding = 2
                 linhas.append(
                     f'<rect x="{x + padding}" y="{y + padding}" '
@@ -322,26 +318,29 @@ class GeradorSVGGantt:
                     f'height="{self.ALTURA_CELULA - 2*padding}" '
                     f'fill="{cor}"/>'
                 )
-        
+
         linhas.append('')
-        
+
         # Labels de tempo
         for tick in range(0, self.total_ticks + 1, max(1, self.total_ticks // 10)):
             x = self.calcular_posicao_x(tick)
             y = self.MARGEM_TOPO - 10
-            linhas.append(f'<text x="{x}" y="{y}" class="tick" text-anchor="middle">{tick}</text>')
-        
+            linhas.append(
+                f'<text x="{x}" y="{y}" class="tick" text-anchor="middle">{tick}</text>')
+
         linhas.append('')
-        
+
         # Labels de tarefas
         for idx_tarefa, tarefa in enumerate(self.tarefas_ordenadas):
             x = self.MARGEM_ESQUERDA - 10
-            y = self.calcular_posicao_y(idx_tarefa) + (self.ALTURA_CELULA / 2) + 5
-            linhas.append(f'<text x="{x}" y="{y}" class="label" text-anchor="end">{tarefa.id}</text>')
-        
+            y = self.calcular_posicao_y(
+                idx_tarefa) + (self.ALTURA_CELULA / 2) + 5
+            linhas.append(
+                f'<text x="{x}" y="{y}" class="label" text-anchor="end">{tarefa.id}</text>')
+
         linhas.append('')
         linhas.append('</svg>')
-        
+
         return "\n".join(linhas)
 
 
@@ -353,10 +352,10 @@ def gerar_svg_gantt(
     # Gera arquivo SVG com grafico de Gantt
     gerador = GeradorSVGGantt(historico, lista_tarefas_tcb)
     svg_content = gerador.gerar_svg_completo()
-    
+
     with open(caminho_saida, 'w', encoding='utf-8') as arquivo:
         arquivo.write(svg_content)
-    
+
     print(f"Grafico Gantt gerado: {caminho_saida}")
     return caminho_saida
 
@@ -370,7 +369,7 @@ def exibir_estado_sistema(
     historico: GerenciadorHistorico = None,
 ) -> str:
     # Exibe estado atual e pega comando do usuario
-    
+
     os.system("cls" if os.name == "nt" else "clear")
 
     print("=" * 70)
@@ -411,17 +410,18 @@ def exibir_estado_sistema(
 
     print()
     print("-" * 70)
-    
+
     if historico:
-        print("Comandos: [Enter/'>'] avancar | ['<'] voltar | ['help'] | ['sair']")
+        print(
+            "Comandos: [Enter/'>'] avancar | ['<'] voltar | ['help'] | ['sair']")
     else:
         print("Comandos: [Enter] avancar | ['sair']")
-    
+
     print("-" * 70)
 
     while True:
         cmd = input("\n> ").strip()
-        
+
         if cmd == "" or cmd == ">":
             return "AVANCAR"
         elif cmd == "<" and historico:
@@ -478,7 +478,8 @@ def imprimir_estado_atual(motor: Any) -> None:
     print(f"Fila de Novas: {[t.id for t in motor.fila_novas]}")
     print(f"Fila de Prontas: {[t.id for t in motor.fila_prontas]}")
     print(f"Fila de Concluidas: {[t.id for t in motor.fila_concluidas]}")
-    print(f"Houve Sorteio? {'SIM' if motor.houve_sorteio_neste_tick else 'NAO'}")
+    print(
+        f"Houve Sorteio? {'SIM' if motor.houve_sorteio_neste_tick else 'NAO'}")
     print("=" * 45)
 
 
@@ -493,7 +494,8 @@ def modificar_tarefa_manualmente(motor: Any) -> None:
     id_alvo = input(
         "Digite o ID da tarefa que deseja alterar (ou ENTER para cancelar): ").strip()
 
-    tarefa_encontrada = next((t for t in todas_tarefas if t.id == id_alvo), None)
+    tarefa_encontrada = next(
+        (t for t in todas_tarefas if t.id == id_alvo), None)
     if not tarefa_encontrada:
         print("Tarefa nao encontrada.")
         return
@@ -522,7 +524,8 @@ def modificar_tarefa_manualmente(motor: Any) -> None:
 
         tarefa_encontrada.estado = "Suspensa"
         motor.fila_suspensas.append(tarefa_encontrada)
-        print(f"Tarefa {tarefa_encontrada.id} movida para a Fila de Suspensas.")
+        print(
+            f"Tarefa {tarefa_encontrada.id} movida para a Fila de Suspensas.")
     print("Modificacao aplicada!\n")
 
 
@@ -550,7 +553,8 @@ def executar_passo_a_passo(motor: Any) -> None:
             if cpu.tarefa_atual:
                 todas_tarefas.append(cpu.tarefa_atual)
 
-        gerar_svg_gantt(motor.historico_estados, todas_tarefas, "gantt_resultado.svg")
+        gerar_svg_gantt(motor.historico_estados,
+                        todas_tarefas, "gantt_resultado.svg")
 
         imprimir_gantt(motor)
         imprimir_estado_atual(motor)
@@ -585,7 +589,8 @@ def executar_completo(motor: Any) -> None:
     for cpu in motor.cpus:
         if cpu.tarefa_atual:
             todas_tarefas.append(cpu.tarefa_atual)
-    gerar_svg_gantt(motor.historico_estados, todas_tarefas, "gantt_resultado.svg")
+    gerar_svg_gantt(motor.historico_estados,
+                    todas_tarefas, "gantt_resultado.svg")
 
     imprimir_gantt(motor)
     print("\n--- FIM DA SIMULACAO COMPLETA ---")
@@ -621,8 +626,10 @@ def _gerar_svg_atual(motor: Any, caminho: str = "gantt_resultado.svg") -> None:
         try:
             hist_len = len(getattr(motor, 'historico_estados', []))
         except Exception:
-            hist_len = getattr(getattr(motor, 'historico_estados', None), 'quantidade_snapshots', lambda: 'N/A')()
-        print(f"[DIAG] Gerando SVG: relogio={getattr(motor,'relogio','?')} | historico_len={hist_len} | tarefas_total={len(tarefas)}")
+            hist_len = getattr(getattr(
+                motor, 'historico_estados', None), 'quantidade_snapshots', lambda: 'N/A')()
+        print(
+            f"[DIAG] Gerando SVG: relogio={getattr(motor, 'relogio', '?')} | historico_len={hist_len} | tarefas_total={len(tarefas)}")
 
         # motor.historico_estados pode ser uma lista ou GerenciadorHistorico
         gerar_svg_gantt(motor.historico_estados, tarefas, caminho)
@@ -661,9 +668,12 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                 total_tarefas = getattr(motor, 'total_tarefas_sistema', None)
                 # heuristica de fim: ultimo ingresso + soma das duracoes + margem
                 try:
-                    tarefas_all = getattr(motor, 'fila_novas', []) + getattr(motor, 'fila_prontas', []) + getattr(motor, 'fila_concluidas', [])
-                    max_ingresso = max((getattr(t, 'ingresso', 0) for t in tarefas_all), default=0)
-                    sum_dur = sum((getattr(t, 'duracao', 0) for t in tarefas_all))
+                    tarefas_all = getattr(motor, 'fila_novas', [
+                    ]) + getattr(motor, 'fila_prontas', []) + getattr(motor, 'fila_concluidas', [])
+                    max_ingresso = max((getattr(t, 'ingresso', 0)
+                                       for t in tarefas_all), default=0)
+                    sum_dur = sum((getattr(t, 'duracao', 0)
+                                  for t in tarefas_all))
                     expected_end = max_ingresso + sum_dur + 10
                 except Exception:
                     expected_end = 10000
@@ -680,7 +690,8 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                             # verifica se nao ha mais trabalho (filas vazias e CPUs ociosas)
                             filas_vazias = (len(getattr(motor, 'fila_prontas', [])) == 0 and
                                             len(getattr(motor, 'fila_novas', [])) == 0)
-                            cpus_ociosas = all(getattr(cpu, 'tarefa_atual', None) is None for cpu in getattr(motor, 'cpus', []))
+                            cpus_ociosas = all(getattr(
+                                cpu, 'tarefa_atual', None) is None for cpu in getattr(motor, 'cpus', []))
                             if filas_vazias and cpus_ociosas:
                                 break
 
@@ -694,7 +705,8 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                             # log every 5 ticks
                             if getattr(motor, 'relogio', 0) % 5 == 0 and getattr(motor, 'relogio', 0) != last_log_time:
                                 last_log_time = getattr(motor, 'relogio', 0)
-                                print(f"[WORKER] relogio={last_log_time} | novas={len(getattr(motor,'fila_novas',[]))} prontas={len(getattr(motor,'fila_prontas',[]))} concluidas={len(getattr(motor,'fila_concluidas',[]))}")
+                                print(
+                                    f"[WORKER] relogio={last_log_time} | novas={len(getattr(motor, 'fila_novas', []))} prontas={len(getattr(motor, 'fila_prontas', []))} concluidas={len(getattr(motor, 'fila_concluidas', []))}")
                         except Exception:
                             break
                     time.sleep(0.01)
@@ -709,7 +721,8 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                     pass
                 type(self).server_mode = 'idle'
 
-            type(self).server_worker = threading.Thread(target=worker, daemon=True)
+            type(self).server_worker = threading.Thread(
+                target=worker, daemon=True)
             type(self).server_worker.start()
 
         def _stop_worker(self):
@@ -784,14 +797,17 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                 with type(self).server_lock:
                     try:
                         motor = type(self).server_motor
-                        print(f"[WEB] AVANCAR pressed | before relogio={getattr(motor,'relogio', '?')} | novas={len(getattr(motor,'fila_novas',[]))} prontas={len(getattr(motor,'fila_prontas',[]))} concluidas={len(getattr(motor,'fila_concluidas',[]))}")
+                        print(
+                            f"[WEB] AVANCAR pressed | before relogio={getattr(motor, 'relogio', '?')} | novas={len(getattr(motor, 'fila_novas', []))} prontas={len(getattr(motor, 'fila_prontas', []))} concluidas={len(getattr(motor, 'fila_concluidas', []))}")
                         # permit only in passo mode
                         if type(self).server_mode == 'passo':
                             motor.avancar_tick()
                             _gerar_svg_atual(motor, svg_path)
-                            print(f"[WEB] AVANCAR result | after relogio={getattr(motor,'relogio', '?')} | novas={len(getattr(motor,'fila_novas',[]))} prontas={len(getattr(motor,'fila_prontas',[]))} concluidas={len(getattr(motor,'fila_concluidas',[]))}")
+                            print(
+                                f"[WEB] AVANCAR result | after relogio={getattr(motor, 'relogio', '?')} | novas={len(getattr(motor, 'fila_novas', []))} prontas={len(getattr(motor, 'fila_prontas', []))} concluidas={len(getattr(motor, 'fila_concluidas', []))}")
                         else:
-                            print(f"[WEB] AVANCAR ignored (mode={type(self).server_mode})")
+                            print(
+                                f"[WEB] AVANCAR ignored (mode={type(self).server_mode})")
                     except Exception as e:
                         print("[WEB] AVANCAR error:", e)
                 self._redirect_root()
@@ -800,14 +816,17 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                 with type(self).server_lock:
                     try:
                         motor = type(self).server_motor
-                        print(f"[WEB] VOLTAR pressed | before relogio={getattr(motor,'relogio','?')} | novas={len(getattr(motor,'fila_novas',[]))} prontas={len(getattr(motor,'fila_prontas',[]))} concluidas={len(getattr(motor,'fila_concluidas',[]))}")
+                        print(
+                            f"[WEB] VOLTAR pressed | before relogio={getattr(motor, 'relogio', '?')} | novas={len(getattr(motor, 'fila_novas', []))} prontas={len(getattr(motor, 'fila_prontas', []))} concluidas={len(getattr(motor, 'fila_concluidas', []))}")
                         # permit only in passo mode
                         if type(self).server_mode == 'passo':
                             motor.retroceder_tick()
                             _gerar_svg_atual(motor, svg_path)
-                            print(f"[WEB] VOLTAR result | after relogio={getattr(motor,'relogio','?')} | novas={len(getattr(motor,'fila_novas',[]))} prontas={len(getattr(motor,'fila_prontas',[]))} concluidas={len(getattr(motor,'fila_concluidas',[]))}")
+                            print(
+                                f"[WEB] VOLTAR result | after relogio={getattr(motor, 'relogio', '?')} | novas={len(getattr(motor, 'fila_novas', []))} prontas={len(getattr(motor, 'fila_prontas', []))} concluidas={len(getattr(motor, 'fila_concluidas', []))}")
                         else:
-                            print(f"[WEB] VOLTAR ignored (mode={type(self).server_mode})")
+                            print(
+                                f"[WEB] VOLTAR ignored (mode={type(self).server_mode})")
                     except Exception as e:
                         print("[WEB] VOLTAR error:", e)
                 self._redirect_root()
@@ -816,7 +835,8 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                 try:
                     # start worker under lock, then wait for it to finish (but don't hold lock while joining)
                     with type(self).server_lock:
-                        print(f"[WEB] MODO completo requested | relogio={getattr(type(self).server_motor,'relogio','?')}")
+                        print(
+                            f"[WEB] MODO completo requested | relogio={getattr(type(self).server_motor, 'relogio', '?')}")
                         self._start_completo()
                         print("[WEB] MODO completo started")
 
@@ -836,7 +856,8 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                         self._stop_worker()
                         type(self).server_mode = 'passo'
                         _gerar_svg_atual(type(self).server_motor, svg_path)
-                        print(f"[WEB] MODO passo selected | relogio={getattr(type(self).server_motor,'relogio','?')}")
+                        print(
+                            f"[WEB] MODO passo selected | relogio={getattr(type(self).server_motor, 'relogio', '?')}")
                     except Exception as e:
                         print("[WEB] MODO passo error:", e)
                 self._redirect_root()
@@ -844,7 +865,8 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
             elif path == '/modo/stop':
                 with type(self).server_lock:
                     try:
-                        print(f"[WEB] MODO stop requested | relogio={getattr(type(self).server_motor,'relogio','?')}")
+                        print(
+                            f"[WEB] MODO stop requested | relogio={getattr(type(self).server_motor, 'relogio', '?')}")
                         self._stop_worker()
                         print("[WEB] MODO stop executed")
                     except Exception as e:
@@ -854,7 +876,8 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
             elif path == '/reiniciar':
                 with type(self).server_lock:
                     try:
-                        print(f"[WEB] REINICIAR requested | relogio={getattr(type(self).server_motor,'relogio','?')}")
+                        print(
+                            f"[WEB] REINICIAR requested | relogio={getattr(type(self).server_motor, 'relogio', '?')}")
                         # stop background worker if any
                         self._stop_worker()
                         cfg = None
@@ -864,7 +887,8 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                             print("[WEB] REINICIAR config load error:", e)
 
                         if not cfg:
-                            print("[WEB] REINICIAR failed: config.txt not found or invalid")
+                            print(
+                                "[WEB] REINICIAR failed: config.txt not found or invalid")
                         else:
                             type(self).server_motor = Simulador(cfg)
                             _gerar_svg_atual(type(self).server_motor, svg_path)
@@ -892,8 +916,10 @@ def iniciar_servidor_web(motor: Any, host: str = '127.0.0.1', port: int = 8000):
     try:
         hist_len = len(getattr(motor, 'historico_estados', []))
     except Exception:
-        hist_len = getattr(getattr(motor, 'historico_estados', None), 'quantidade_snapshots', lambda: 'N/A')()
-    print(f"[DIAG] iniciar_servidor_web: relogio={getattr(motor,'relogio','?')} | historico_len={hist_len} | fila_novas={len(getattr(motor,'fila_novas',[]))}")
+        hist_len = getattr(getattr(motor, 'historico_estados', None),
+                           'quantidade_snapshots', lambda: 'N/A')()
+    print(
+        f"[DIAG] iniciar_servidor_web: relogio={getattr(motor, 'relogio', '?')} | historico_len={hist_len} | fila_novas={len(getattr(motor, 'fila_novas', []))}")
     _gerar_svg_atual(motor, 'gantt_resultado.svg')
     handler = make_handler_class(motor, 'gantt_resultado.svg')
     server_address = (host, port)
