@@ -1,14 +1,7 @@
 # -*- coding: utf-8 -*-
-# Simulador de Escalonamento em Sistemas Operacionais
-# Frontend com suporte a time-travel e visualizacao em Gantt
-
-import csv
 import os
 import copy
-from dataclasses import dataclass, asdict
-from pathlib import Path
-from pprint import pprint
-from typing import Any, List, Dict, Tuple, Optional
+from typing import Any, List, Optional, Tuple
 import http.server
 import urllib.parse
 import threading
@@ -17,156 +10,8 @@ import time
 from parser_config import ler_arquivo_configuracao
 from simulador import Simulador
 
-
-@dataclass
-class TCB:
-    # Task Control Block simplificado
-    id: str
-    cor: str
-    ingresso: int
-    duracao: int
-    prioridade: int
-    lista_eventos: List[str]
-
-
-# ========== PARSER DE CONFIGURACAO ==========
-
-def limpar_texto(valor: str) -> str:
-    return valor.strip()
-
-
-def normalizar_algoritmo(valor: str) -> str:
-    return limpar_texto(valor).lower()
-
-
-def converter_inteiro(valor: str, nome_campo: str) -> int:
-    texto = limpar_texto(valor)
-    try:
-        return int(texto)
-    except ValueError as exc:
-        raise ValueError(f"Campo '{nome_campo}' invalido: {valor!r}") from exc
-
-
-def parse_lista_eventos(valor: str) -> List[str]:
-    texto = limpar_texto(valor)
-    if not texto:
-        return []
-    eventos = [limpar_texto(item) for item in texto.split(",")]
-    return [item for item in eventos if item]
-
-
-def ler_configuracao(caminho_arquivo: str = "config.txt") -> dict:
-    # Abre arquivo de config e retorna dados pronto
-    caminho = Path(caminho_arquivo)
-    if not caminho.exists():
-        raise FileNotFoundError(f"Arquivo nao encontrado: {caminho.resolve()}")
-
-    tarefas: List[TCB] = []
-
-    with caminho.open(mode="r", encoding="utf-8", newline="") as arquivo:
-        leitor = csv.reader(arquivo, delimiter=";")
-        linhas = [linha for linha in leitor if any(
-            campo.strip() for campo in linha)]
-
-    if not linhas:
-        raise ValueError("Arquivo de configuracao vazio.")
-
-    if len(linhas[0]) < 3:
-        raise ValueError(
-            "Primeira linha deve ter: algoritmo; quantum; qtde_cpus"
-        )
-
-    algoritmo, quantum, qtde_cpus = linhas[0][:3]
-    configuracao_sistema = {
-        "algoritmo": normalizar_algoritmo(algoritmo),
-        "quantum": converter_inteiro(quantum, "quantum"),
-        "qtde_cpus": converter_inteiro(qtde_cpus, "qtde_cpus"),
-    }
-
-    for numero_linha, linha in enumerate(linhas[1:], start=2):
-        if len(linha) < 6:
-            raise ValueError(
-                f"Linha {numero_linha}: faltam campos (id; cor; ingresso; duracao; prioridade; eventos)"
-            )
-
-        id_tarefa = limpar_texto(linha[0])
-        cor = limpar_texto(linha[1])
-        ingresso = converter_inteiro(
-            linha[2], f"ingresso linha {numero_linha}")
-        duracao = converter_inteiro(linha[3], f"duracao linha {numero_linha}")
-        prioridade = converter_inteiro(
-            linha[4], f"prioridade linha {numero_linha}")
-        lista_eventos = parse_lista_eventos(linha[5])
-
-        tarefas.append(
-            TCB(
-                id=id_tarefa,
-                cor=cor,
-                ingresso=ingresso,
-                duracao=duracao,
-                prioridade=prioridade,
-                lista_eventos=lista_eventos,
-            )
-        )
-
-    return {
-        "sistema": configuracao_sistema,
-        "tarefas": [asdict(tarefa) for tarefa in tarefas],
-    }
-
-
-def imprimir_resultado(dados: dict) -> None:
-    print("=== CONFIGURACAO DO SISTEMA ===")
-    pprint(dados["sistema"], sort_dicts=False)
-    print()
-    print("=== LISTA DE TAREFAS (TCB) ===")
-    for indice, tarefa in enumerate(dados["tarefas"], start=1):
-        print(f"Tarefa {indice}:")
-        pprint(tarefa, sort_dicts=False)
-        print()
-
-
-# ========== GERENCIADOR DE HISTORICO (TIME-TRAVEL) ==========
-
-class GerenciadorHistorico:
-    # Gerencia snapshots para voltar/avancar no tempo
-
-    def __init__(self):
-        self.snapshots: List[Dict[str, Any]] = []
-        self.posicao_atual: int = -1
-
-    def salvar_snapshot(self, estado_cpus: Any, estado_tarefas: Any) -> None:
-        # Remove snapshots posteriores se estava voltando
-        if self.posicao_atual < len(self.snapshots) - 1:
-            self.snapshots = self.snapshots[:self.posicao_atual + 1]
-
-        snapshot = {
-            "cpus": copy.deepcopy(estado_cpus),
-            "tarefas": copy.deepcopy(estado_tarefas)
-        }
-
-        self.snapshots.append(snapshot)
-        self.posicao_atual = len(self.snapshots) - 1
-
-    def voltar(self) -> Optional[Tuple[Any, Any]]:
-        if self.posicao_atual > 0:
-            self.posicao_atual -= 1
-            snapshot = self.snapshots[self.posicao_atual]
-            return (snapshot["cpus"], snapshot["tarefas"])
-        return None
-
-    def avancar(self) -> Optional[Tuple[Any, Any]]:
-        if self.posicao_atual < len(self.snapshots) - 1:
-            self.posicao_atual += 1
-            snapshot = self.snapshots[self.posicao_atual]
-            return (snapshot["cpus"], snapshot["tarefas"])
-        return None
-
-    def esta_no_presente(self) -> bool:
-        return self.posicao_atual == len(self.snapshots) - 1
-
-    def quantidade_snapshots(self) -> int:
-        return len(self.snapshots)
+# O TCB real do sistema é a classe Task em estruturas.py.
+# O frontend acessa os objetos Task diretamente via motor.fila_* e cpu.tarefa_atual.
 
 
 # ========== GERADOR DE GANTT EM SVG ==========
@@ -562,7 +407,7 @@ class GeradorSVGGantt:
 
 
 def gerar_svg_gantt(
-    historico: GerenciadorHistorico,
+    historico: Any,
     lista_tarefas_tcb: List[Any],
     caminho_saida: str = "gantt.svg"
 ) -> str:
@@ -577,286 +422,19 @@ def gerar_svg_gantt(
     return caminho_saida
 
 
-# ========== INTERFACE DO USUARIO ==========
-
-def exibir_estado_sistema(
-    tick_atual: int,
-    estado_cpus: Any,
-    estado_tarefas: Any,
-    historico: GerenciadorHistorico = None,
-) -> str:
-    # Exibe estado atual e pega comando do usuario
-
-    os.system("cls" if os.name == "nt" else "clear")
-
-    print("=" * 70)
-    if historico and historico.esta_no_presente():
-        print(f"TICK: {tick_atual} [PRESENTE]")
-    else:
-        print(f"TICK: {tick_atual} [HISTORICO]")
-    print("=" * 70)
-    print()
-
-    print("CPUs em execucao:")
-    if isinstance(estado_cpus, dict):
-        for cpu, tarefa in estado_cpus.items():
-            tarefa_exibida = tarefa if tarefa else "Ociosa"
-            print(f"  {cpu}: {tarefa_exibida}")
-    elif isinstance(estado_cpus, list):
-        for indice, tarefa in enumerate(estado_cpus):
-            tarefa_exibida = tarefa if tarefa else "Ociosa"
-            print(f"  CPU {indice}: {tarefa_exibida}")
-    else:
-        pprint(estado_cpus, sort_dicts=False)
-
-    print()
-    print("Estado das tarefas:")
-    if not estado_tarefas:
-        print("  (nenhuma)")
-    elif isinstance(estado_tarefas, dict):
-        for nome, info in estado_tarefas.items():
-            print(f"  {nome}: {info}")
-    else:
-        for tarefa in estado_tarefas:
-            if isinstance(tarefa, dict):
-                identificador = tarefa.get("id", "?")
-                estado = tarefa.get("estado", "?")
-                print(f"  {identificador}: {estado}")
-            else:
-                print(f"  {tarefa}")
-
-    print()
-    print("-" * 70)
-
-    if historico:
-        print(
-            "Comandos: [Enter/'>'] avancar | ['<'] voltar | ['help'] | ['sair']")
-    else:
-        print("Comandos: [Enter] avancar | ['sair']")
-
-    print("-" * 70)
-
-    while True:
-        cmd = input("\n> ").strip()
-
-        if cmd == "" or cmd == ">":
-            return "AVANCAR"
-        elif cmd == "<" and historico:
-            resultado = historico.voltar()
-            if resultado is None:
-                print("Ja esta no comeco do historico.")
-                continue
-            return "VOLTAR"
-        elif cmd.lower() == "help":
-            print("\nComandos disponiveis:")
-            print("  [Enter] ou '>'  -> Avancar para proximo tick")
-            print("  '<'             -> Voltar um tick")
-            print("  'help'          -> Mostra esta mensagem")
-            print("  'sair'          -> Encerra simulacao")
-            input("\nPressione Enter para continuar...")
-            return "CONTINUAR"
-        elif cmd.lower() == "sair":
-            return "SAIR"
-        else:
-            print(f"Comando desconhecido: {cmd}")
-
-
-def imprimir_gantt(motor: Any) -> None:
-    print("\nGRAFICO DE GANTT (Linha do Tempo):")
-
-    regua = "Tempo:  "
-    for tick in range(motor.relogio + 1):
-        regua += f" {tick:02d} "
-    print(regua)
-
-    for i in range(len(motor.cpus)):
-        linha = f"CPU {i}:  "
-
-        for estado in motor.historico_estados:
-            cpu_passado = estado["cpus"][i]
-            if cpu_passado.tarefa_atual:
-                linha += f"[{cpu_passado.tarefa_atual.id}] "
-            else:
-                linha += "[--] "
-
-        cpu_agora = motor.cpus[i]
-        if cpu_agora.tarefa_atual:
-            linha += f"[{cpu_agora.tarefa_atual.id}] "
-        else:
-            linha += "[--] "
-
-        print(linha)
-
-
-def imprimir_estado_atual(motor: Any) -> None:
-    print(f"\n{'=' * 45}")
-    print(f"BASTIDORES - TICK: {motor.relogio}")
-    print(f"{'=' * 45}")
-    print(f"Fila de Novas: {[t.id for t in motor.fila_novas]}")
-    print(f"Fila de Prontas: {[t.id for t in motor.fila_prontas]}")
-    print(f"Fila de Concluidas: {[t.id for t in motor.fila_concluidas]}")
-    print(
-        f"Houve Sorteio? {'SIM' if motor.houve_sorteio_neste_tick else 'NAO'}")
-    print("=" * 45)
-
-
-def modificar_tarefa_manualmente(motor: Any) -> None:
-    todas_tarefas = motor.fila_novas + motor.fila_prontas + \
-        motor.fila_concluidas + motor.fila_suspensas
-    for cpu in motor.cpus:
-        if cpu.tarefa_atual:
-            todas_tarefas.append(cpu.tarefa_atual)
-
-    print("\n--- MODIFICAR TAREFA ---")
-    print(f"Tarefas no sistema: {[t.id for t in todas_tarefas]}")
-    id_alvo = input(
-        "Digite o ID da tarefa que deseja alterar (ou ENTER para cancelar): ").strip()
-
-    tarefa_encontrada = next(
-        (t for t in todas_tarefas if t.id == id_alvo), None)
-    if not tarefa_encontrada:
-        print("Tarefa nao encontrada.")
-        return
-
-    print(
-        f"Editando Tarefa {tarefa_encontrada.id} | Duracao: {tarefa_encontrada.duracao} | Prioridade: {tarefa_encontrada.prioridade} | Estado: {tarefa_encontrada.estado}")
-    nova_duracao = input("Nova Duracao (ENTER para manter): ").strip()
-    nova_prioridade = input("Nova Prioridade (ENTER para manter): ").strip()
-    novo_estado = input(
-        "Forcar Estado [Suspensa, Pronta, Nova] (ENTER para manter): ").strip()
-
-    if nova_duracao:
-        tarefa_encontrada.duracao = int(nova_duracao)
-    if nova_prioridade:
-        tarefa_encontrada.prioridade = int(nova_prioridade)
-    if novo_estado:
-        tarefa_encontrada.estado = novo_estado
-        print("Aviso: mover a tarefa manualmente entre filas e complexo. Status alterado na memoria.")
-    if novo_estado.lower() == "suspensa":
-        if tarefa_encontrada in motor.fila_prontas:
-            motor.fila_prontas.remove(tarefa_encontrada)
-
-        for cpu in motor.cpus:
-            if cpu.tarefa_atual == tarefa_encontrada:
-                cpu.tarefa_atual = None
-
-        tarefa_encontrada.estado = "Suspensa"
-        motor.fila_suspensas.append(tarefa_encontrada)
-        print(
-            f"Tarefa {tarefa_encontrada.id} movida para a Fila de Suspensas.")
-    print("Modificacao aplicada!\n")
-
-
-def executar_passo_a_passo(motor: Any) -> None:
-    total_tarefas = len(motor.fila_novas)
-    while len(motor.fila_concluidas) < motor.total_tarefas_sistema:
-        # Trecho legado preservado por respeito ao codigo antigo:
-        # imprimir_gantt(motor)
-        # imprimir_estado_atual(motor)
-        # comando = input("\n[ENTER] Avancar | [V] Voltar | [M] Modificar Tarefa | [S] Sair: ").strip().upper()
-        # if comando == 'S':
-        #     break
-        # elif comando == 'V':
-        #     if motor.retroceder_tick():
-        #         print("\nVoltando no tempo...")
-        # elif comando == 'M':
-        #     modificar_tarefa_manualmente(motor)
-        # else:
-        #     motor.avancar_tick()
-
-        motor.avancar_tick()
-
-        todas_tarefas = motor.fila_novas + motor.fila_prontas + \
-            motor.fila_concluidas + motor.fila_suspensas
-        for cpu in motor.cpus:
-            if cpu.tarefa_atual:
-                todas_tarefas.append(cpu.tarefa_atual)
-
-        gerar_svg_gantt(motor.historico_estados,
-                        todas_tarefas, "gantt_resultado.svg")
-
-        imprimir_gantt(motor)
-        imprimir_estado_atual(motor)
-
-        comando = input(
-            "\n[ENTER] Avancar | [V] Voltar | [M] Modificar Tarefa | [S] Sair: ").strip().upper()
-
-        if comando == 'S':
-            break
-        elif comando == 'V':
-            if motor.retroceder_tick():
-                print("\nVoltando no tempo...")
-        elif comando == 'M':
-            modificar_tarefa_manualmente(motor)
-
-    print("\n--- FIM DA SIMULACAO PASSO A PASSO ---")
-    imprimir_relatorio_ociosidade(motor)
-
-
-def executar_completo(motor: Any) -> None:
-    print("\nRodando Execucao Completa...")
-    total_tarefas = len(motor.fila_novas)
-
-    while len(motor.fila_concluidas) < total_tarefas:
-        motor.avancar_tick()
-
-        if motor.relogio > 200:
-            print("Abordado por limite de seguranca de ticks.")
-            break
-
-    todas_tarefas = motor.fila_novas + motor.fila_prontas + \
-        motor.fila_concluidas + motor.fila_suspensas
-    for cpu in motor.cpus:
-        if cpu.tarefa_atual:
-            todas_tarefas.append(cpu.tarefa_atual)
-    gerar_svg_gantt(motor.historico_estados,
-                    todas_tarefas, "gantt_resultado.svg")
-
-    imprimir_gantt(motor)
-    print("\n--- FIM DA SIMULACAO COMPLETA ---")
-    imprimir_relatorio_ociosidade(motor)
-
-
-def imprimir_relatorio_ociosidade(motor: Any) -> None:
-    print("\nRELATORIO DE OCIOSIDADE DOS PROCESSADORES:")
-    for cpu in motor.cpus:
-        print(f"CPU {cpu.id}: Desligada/Ociosa por {cpu.tempo_desligada} ticks.")
-    print("=" * 45)
-
-
-# ========== SERVIDOR WEB (http.server) ==========
-def _montar_lista_tarefas_para_grafico(motor: Any) -> List[Any]:
-    todas_tarefas = []
-    try:
-        # Adicione + motor.fila_suspensas
-        todas_tarefas = motor.fila_novas + motor.fila_prontas + \
-            motor.fila_suspensas + motor.fila_concluidas
-    except Exception:
-        todas_tarefas = []
-
-    for cpu in getattr(motor, 'cpus', []):
-        if getattr(cpu, 'tarefa_atual', None):
-            todas_tarefas.append(cpu.tarefa_atual)
-
-    return todas_tarefas
-
+# ========== SERVIDOR WEB ==========
 
 def _gerar_svg_atual(motor: Any, caminho: str = "gantt_resultado.svg") -> None:
-    tarefas = _montar_lista_tarefas_para_grafico(motor)
+    """Monta a lista de tarefas do motor e gera o SVG do Gantt."""
+    todas = (motor.fila_novas + motor.fila_prontas +
+             motor.fila_suspensas + motor.fila_concluidas)
+    for cpu in motor.cpus:
+        if cpu.tarefa_atual and cpu.tarefa_atual not in todas:
+            todas.append(cpu.tarefa_atual)
     try:
-        # Log diagnóstico: estado inicial do motor antes de gerar SVG
-        try:
-            hist_len = len(getattr(motor, 'historico_estados', []))
-        except Exception:
-            hist_len = getattr(getattr(
-                motor, 'historico_estados', None), 'quantidade_snapshots', lambda: 'N/A')()
-        print(
-            f"[DIAG] Gerando SVG: relogio={getattr(motor, 'relogio', '?')} | historico_len={hist_len} | tarefas_total={len(tarefas)}")
-
-        # motor.historico_estados pode ser uma lista ou GerenciadorHistorico
-        gerar_svg_gantt(motor.historico_estados, tarefas, caminho)
+        gerar_svg_gantt(motor.historico_estados, todas, caminho)
     except Exception as exc:
-        print("Erro ao gerar SVG no servidor web:", exc)
+        print(f"Erro ao gerar SVG: {exc}")
 
 
 def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
@@ -1073,8 +651,21 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                     <tbody>
                 """
 
+                # Transições válidas — espelha simulador.py (Req. 3.4).
+                _transicoes = {
+                    "Nova": ["Pronta"], "Pronta": ["Suspensa"],
+                    "Executando": ["Pronta", "Suspensa", "Concluida"],
+                    "Suspensa": ["Pronta"], "Concluida": [],
+                }
+
                 for t in todas_tarefas:
                     cor_hex = t.cor if t.cor.startswith("#") else f"#{t.cor}"
+                    destinos = _transicoes.get(t.estado, [])
+                    opcoes = '<option value="">-- Alterar para --</option>' + "".join(
+                        f'<option value="{d}">{d}</option>' for d in destinos
+                    )
+                    desabilitado = "disabled" if not destinos else ""
+                    btn_cor = "#9e9e9e" if not destinos else "#d32f2f"
                     tabela_tcb_html += f"""
                     <tr>
                         <td><strong>{t.id}</strong></td>
@@ -1087,14 +678,10 @@ def make_handler_class(motor: Any, svg_path: str = "gantt_resultado.svg"):
                         <td>
                             <form action="/editar" method="GET" style="display: flex; gap: 4px; justify-content: center; margin: 0;">
                                 <input type="hidden" name="id" value="{t.id}">
-                                <select name="estado" style="padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
-                                    <option value="">-- Alterar para --</option>
-                                    <option value="Nova">Nova</option>
-                                    <option value="Pronta">Pronta</option>
-                                    <option value="Suspensa">Suspensa</option>
-                                    <option value="Concluida">Concluida</option>
+                                <select name="estado" style="padding: 4px; border-radius: 4px; border: 1px solid #ccc;" {desabilitado}>
+                                    {opcoes}
                                 </select>
-                                <button type="submit" style="padding: 4px 8px; background: #d32f2f; color: white; border: none; border-radius: 4px; cursor: pointer;">Aplicar</button>
+                                <button type="submit" style="padding: 4px 8px; background: {btn_cor}; color: white; border: none; border-radius: 4px; cursor: pointer;" {desabilitado}>Aplicar</button>
                             </form>
                         </td>
                     </tr>

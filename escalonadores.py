@@ -2,27 +2,22 @@ import random
 
 
 def obter_tupla_desempate(tarefa, tarefas_executavam_antes):
-    # Se a tarefa foi expulsa pelo Quantum, 'estava_executando' deve ser falso
-    # para permitir o Round-Robin real.
+    """
+      1. Continuidade
+      2. Instante de ingresso
+      3. Duração total
+      4. Sorteio
+    """
     estava_executando = 0 if tarefa in tarefas_executavam_antes else 1
-
-    return (
-        estava_executando,
-        tarefa.ingresso,
-        tarefa.duracao,
-        random.random()
-    )
+    return (estava_executando, tarefa.ingresso, tarefa.duracao, random.random())
 
 
 def executar_escalonador(fila_prontas, cpus, algoritmo):
-    """
-    Função unificada de escalonamento. 
-    Serve para SRTF, PRIOP e qualquer outro algoritmo futuro.
-    """
+    # Reúne candidatos: fila de prontas + tarefas que ocupavam as CPUs.
+    # As CPUs são esvaziadas aqui; a realocação ocorre ao final.
     candidatas = fila_prontas.copy()
     tarefas_executavam_antes = []
 
-    # 1. Retira as tarefas que estavam a executar nas CPUs
     for cpu in cpus:
         if cpu.tarefa_atual is not None:
             candidatas.append(cpu.tarefa_atual)
@@ -32,48 +27,41 @@ def executar_escalonador(fila_prontas, cpus, algoritmo):
     if not candidatas:
         return [], False
 
-    # 2. Define a regra de ordenação primária consoante o algoritmo
     def obter_chave_primaria(t):
         if algoritmo == "SRTF":
-            return t.duracao - t.tempo_executado
+            return t.duracao - t.tempo_executado   # menor tempo restante primeiro
         elif algoritmo == "PRIOP":
-            return -t.prioridade
-        # Quando fores fazer o Projeto B, basta adicionares o PRIOPEnv aqui!
+            return -t.prioridade                   # maior prioridade primeiro
         return 0
 
-    # 3. VERIFICAÇÃO DE EMPATE/SORTEIO
+    # Detecta empate nos critérios determinísticos para sinalizar sorteio no Gantt.
     houve_sorteio = False
     chaves_vistas = set()
     for t in candidatas:
-        chave_base = (
+        chave = (
             obter_chave_primaria(t),
             0 if t in tarefas_executavam_antes else 1,
             t.ingresso,
             t.duracao
         )
-        if chave_base in chaves_vistas:
+        if chave in chaves_vistas:
             houve_sorteio = True
-        chaves_vistas.add(chave_base)
+        chaves_vistas.add(chave)
 
-    # 4. ORDENAÇÃO GERAL (Chave primária + Desempates)
     candidatas.sort(key=lambda t: (
         obter_chave_primaria(t),
         *obter_tupla_desempate(t, tarefas_executavam_antes)
     ))
 
-    # 5. REALOCAÇÃO NAS CPUs (Afinidade de CPU)
+    # Realoca nas CPUs respeitando afinidade: tenta devolver cada tarefa à CPU
+    # onde ela estava antes. Se essa CPU já foi tomada, usa qualquer livre.
     fila_prontas.clear()
     for tarefa in candidatas:
-        # Tenta achar a CPU que tem afinidade com esta tarefa (e que esteja livre)
-        cpu_preferida = next(
-            (c for c in cpus if c.tarefa_atual is None and c.ultima_tarefa == tarefa), None)
-
-        if cpu_preferida is not None:
-            cpu_alocar = cpu_preferida
-        else:
-            # Se a CPU dela já foi ocupada, pega qualquer uma livre
-            cpu_alocar = next(
-                (c for c in cpus if c.tarefa_atual is None), None)
+        cpu_alocar = (
+            next(
+                (c for c in cpus if c.tarefa_atual is None and c.ultima_tarefa == tarefa), None)
+            or next((c for c in cpus if c.tarefa_atual is None), None)
+        )
 
         if cpu_alocar is not None:
             cpu_alocar.alocar_tarefa(tarefa)
