@@ -10,7 +10,7 @@ class Simulador:
         algoritmos_suportados = ["SRTF", "PRIOP"]
         if config["algoritmo"] not in algoritmos_suportados:
             print(
-                f"ERRO FATAL: O algoritmo '{config['algoritmo']}' não foi implementado!")
+                f"🛑 ERRO FATAL: O algoritmo '{config['algoritmo']}' não foi implementado!")
             print(f"Algoritmos suportados: {algoritmos_suportados}")
             exit(1)
 
@@ -192,10 +192,6 @@ class Simulador:
                 cpu.desligar()
 
         self.relogio += 1
-
-        # Salva snapshot APOS executar o tick para registrar mudancas (conclusoes, trocas)
-        # Assim garantimos que o historico contem o momento em que tarefas chegam a 'Concluida'.
-        self.salvar_snapshot()
 
     def retroceder_tick(self):
         if len(self.historico_estados) == 0:
